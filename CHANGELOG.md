@@ -1,0 +1,89 @@
+# Registro de cambios
+
+Todas las versiones relevantes de **Tejido Empresarial · ProColombia**.
+Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) · Versionado: [SemVer](https://semver.org/lang/es/).
+
+Para un aplicativo de este tipo: **PATCH** corrige textos, estilos o errores; **MINOR** agrega funciones o secciones compatibles; **MAJOR** cambia la arquitectura o el contrato de datos.
+
+---
+
+## [3.4.0] — 2026-09-03
+
+### Agregado
+- **Asistente de análisis (`/asistente`)**: una sección nueva para preguntar en español sobre el tejido empresarial y recibir la respuesta escrita, una tabla, una gráfica cuando corresponde y la consulta SQL que la respalda. Responde conteos y cruces (empresas por departamento y tamaño, sectores por cadena productiva en un departamento), rankings (países destino, productos, empresas), comparaciones año corrido, listados por razón social o NIT, y fichas de empresa.
+- **El único conector sigue siendo Snowflake.** La pregunta la traduce a SQL **Cortex Analyst** contra el modelo semántico `TEJIDO_EMPRESARIAL_SEGMENTACION`, y la respuesta la redacta **SNOWFLAKE.CORTEX.COMPLETE**: ningún dato sale de la cuenta y no hace falta ninguna credencial nueva —el token de Cortex se firma con la misma llave RSA que ya usa el aplicativo—.
+- **El modelo propone y el código dispone.** Antes de tocar la base, el aplicativo exige que la consulta sea una sola sentencia de lectura, sobre los esquemas permitidos y con tope de filas; después comprueba que **cada cifra del texto exista en el resultado** y, si no, reemplaza la redacción por un resumen construido con los datos. La respuesta muestra si las cifras quedaron verificadas.
+- **Advertencia de IA en todas partes**: en la portada, en la página, junto a cada respuesta y dentro de los dos archivos que se descargan.
+- **Descargas**: libro de Excel (hoja «Respuesta» con la pregunta, el texto, la SQL y la advertencia; hoja «Datos» con la tabla, identificadores como texto y autofiltro) y presentación de PowerPoint (portada, tabla paginada y lámina de trazabilidad).
+- **Gráficas propias en SVG**, sin librerías externas: barras de un solo tono para una medida, apiladas para cruces de dos dimensiones, agrupadas para varias medidas, líneas para series por año y cifra destacada para un solo número. La paleta está validada para daltonismo y contraste, y la tabla siempre acompaña a la gráfica.
+- **Carpeta `snowflake/`**: el modelo semántico, la especificación del agente y el script de permisos con sus consultas de verificación, versionados junto al código.
+- Variables nuevas: `SF_SEMANTIC_VIEW`, `SF_CORTEX_MODEL`, `SF_ALLOWED_SCHEMAS`, `SF_HOST`, `IA_MAX_ROWS`, `IA_MAX_ROWS_CLIENT`, `IA_ANALYST_TIMEOUT`. Todas tienen un valor por defecto correcto.
+- Pruebas: 32 nuevas sobre las guardas de SQL, la verificación de cifras, la elección de gráfica, el flujo del asistente, el contenido de las descargas y la coherencia de las listas de dependencias (72 en total).
+- `requirements-test.txt` y `RAILWAY_VARIABLES.md`.
+
+### Cambiado
+- La navegación principal y la portada incorporan el asistente; el resto del aplicativo no cambia.
+- **Una sola lista de dependencias para las pruebas.** El notebook de publicación y la integración continua instalan `requirements-test.txt` en lugar de una lista escrita a mano. Mantener dos listas ya había causado tres fallos de publicación —faltaron `cryptography`, `pyarrow` y `python-pptx`—; `tests/test_dependencias.py` ahora falla en el propio conjunto de pruebas si una dependencia de producción no está declarada allí, de modo que el error aparece donde está la causa y no en Colab.
+- El pre-flight del notebook vigila también los archivos del asistente y los artefactos de Snowflake.
+
+## [3.3.1] — 2026-09-02
+
+### Corregido
+- **Las consultas fallaban en Railway aunque la conexión estuviera bien.** La imagen se construía sin `pyarrow`, así que `to_pandas()` del conector lanzaba «Optional dependency: pandas is not installed» y devolvían 502 el panel de filtros, la búsqueda, la ficha de empresa y la descarga. El aplicativo Streamlit original sí traía `pyarrow==17.0.0`. Ahora `requirements-api.txt` instala `snowflake-snowpark-python[pandas]`.
+- **El aplicativo ya no depende de esa pieza opcional.** Si `pyarrow` falta, los resultados se arman a partir de las filas (`collect()`), como hacía el original; los importes se convierten a número para que el Excel conserve sus formatos. La página de estado indica cuál de las dos vías está en uso.
+- **Los errores dicen la causa.** Antes un fallo de consulta respondía «No fue posible…» sin más; ahora incluye el mensaje real de Snowflake, ya redactado, de modo que se puede corregir sin abrir el diagnóstico.
+- **El panel de filtros avisa cuando no pudo traer las opciones.** Antes los desplegables quedaban vacíos y el aviso aparecía lejos, debajo de los resultados: parecía que el aplicativo no servía.
+
+### Agregado
+- `/api/health` y el diagnóstico informan si el conector puede devolver tablas por la vía rápida (`pandas_arrow`).
+- Pruebas: 5 nuevas que fijan la lectura de resultados con y sin `pyarrow`, el registro de la causa de un fallo y su limpieza tras una consulta correcta (40 en total).
+
+## [3.3.0] — 2026-09-02
+
+### Agregado
+- **Página «Estado del aplicativo» (`/estado`)**: dice en una frase si el aplicativo consulta datos reales o de demostración, con una pastilla de color en el encabezado visible desde cualquier página (en móvil, un punto de color junto al menú). Al abrirse comprueba la conexión sola, así que da un veredicto sin que nadie pulse nada. Incluye botones para volver a probar y para ver el diagnóstico paso a paso, el detalle del servicio (versión, origen configurado, última conexión correcta, conector, llave, variables faltantes) y las instrucciones concretas para Railway. Acepta `/estado?token=…` para ejecutar el diagnóstico automáticamente.
+- **`/api/health` distingue «configurado» de «conectado»**: el servicio sólo afirma que está conectado después de que Snowflake haya respondido de verdad, y devuelve la marca de tiempo de esa última conexión correcta (`verified`, `verified_at`). Antes bastaba con tener las variables puestas para mostrarse en verde.
+- **`/api/diagnostico`**: recorre paso a paso entorno → conector → llave → sesión → tablas y devuelve el error real de cada paso, sin exponer secretos, con una recomendación concreta para el primero que falla. En producción exige autenticación HTTP Basic o `APP_DIAG_TOKEN`.
+- `/api/health` ahora informa si el conector está instalado, su versión, qué variables `SF_*` faltan y de dónde sale la llave.
+- `DIAGNOSTICO_RAILWAY.md`: guía de verificación y solución de fallos de conexión en Railway.
+- Variables `APP_DIAG_TOKEN` y `LOG_LEVEL`.
+- Pruebas: 18 nuevas sobre normalización de llaves, reporte de configuración, estados del health y el endpoint de diagnóstico (35 en total).
+- El build de validación del notebook de publicación instala `cryptography` y, si falla, imprime el final del registro con la causa exacta en lugar de un «Comando falló (1)» sin contexto.
+
+### Corregido
+- **La llave privada se normaliza antes de usarla.** Antes, un Base64 con un salto de línea o un espacio al final —lo más frecuente al pegar variables en Railway— hacía fallar la conexión con un mensaje genérico. Ahora se aceptan Base64 con espacios y saltos, PEM pegado directamente, Base64 de un PEM y archivos `.der`/`.p8`; si la llave está cifrada se descifra con la frase configurada y se entrega al conector en DER PKCS8.
+- Los errores de conexión dejan de ser genéricos: el mensaje incluye la causa real reportada por Snowflake (sin secretos) y apunta a `/api/diagnostico`.
+- Los registros del servicio se envían explícitamente a la salida estándar para que aparezcan en Railway.
+- Los avisos de la interfaz usaban una caja flexible que separaba las palabras en negrita; ahora el texto fluye normalmente.
+- El estado de la conexión se comparte con `useSyncExternalStore`: antes, si la página `/estado` llegaba por carga diferida en el momento justo, se quedaba indefinidamente en «Consultando el estado…» mientras el encabezado ya mostraba el resultado.
+- El health profundo hace un solo intento (antes reintentaba tres veces con espera creciente y tardaba casi medio minuto en responder que no había conexión).
+- Las pruebas se omiten con elegancia cuando el entorno no trae `cryptography` o el conector de Snowflake, en lugar de interrumpir toda la ejecución.
+
+## [3.2.0] — 2026-09-02
+
+### Agregado
+- `notebooks/Demo_Efimera_TejidoEmpresarial.ipynb`: demostración efímera desde Google Colab (compila el frontend, levanta FastAPI y expone una URL temporal con TryCloudflare). Dos modos de datos: demostración sintética y Snowflake real, este último protegido con usuario y contraseña automáticos.
+- `notebooks/Publicacion_GitHub_TejidoEmpresarial.ipynb`: publicación desde Google Drive a GitHub con validaciones, build de validación (frontend y backend), tag `vX.Y.Z` y verificación post-push.
+- `.github/workflows/build.yml`: integración continua que ejecuta las pruebas del backend y compila el frontend en cada push y pull request.
+- `CHANGELOG.md` (este archivo).
+
+### Cambiado
+- El conector de Snowflake se importa de forma tolerante: el modo demostración funciona en entornos donde `snowflake-snowpark-python` no está instalado (por ejemplo Colab con Python 3.12). En producción no cambia nada: `requirements-api.txt` lo instala y `/api/health` reporta el estado real.
+
+## [3.1.0] — 2026-09-02
+
+### Agregado
+- Migración completa de la interfaz de Streamlit a **React 19 + TypeScript (Vite 8)** con el sistema de diseño de la familia digital ProColombia (azul noche, ámbar, Jost / Maven Pro / IBM Plex Mono).
+- Portada institucional con animación del tejido empresarial convergiendo en los ejes de Exportaciones, Inversión y Turismo.
+- Página de consulta con cuatro modos (segmentación, razón social, NIT, lote de NIT), 19 filtros dependientes agrupados con ayuda contextual y consulta compartible por URL.
+- Resultados con orden por columna, búsqueda local, selector de columnas, paginación configurable y tarjetas en celular.
+- Ficha de empresa (`/empresa/<NIT>`) con indicadores, gráfico de exportaciones por periodo y las 63 variables por secciones.
+- Glosario navegable a partir del archivo institucional de variables y sección de metodología.
+- Descarga Excel en un paso con hojas `Resumen`, `Ficha_Empresa`, `Vista_Principal`, `Datos_Completos` y `Diccionario`, con nombres descriptivos.
+- API FastAPI (`/api/*`) que conserva la lógica de consulta a Snowflake, con auditoría en segundo plano y modo de demostración sintético.
+- Imagen Docker única (Node 22 compila, Python 3.11 sirve) y configuración de Railway con health check.
+- Documentación: `README.md`, `GUIA_TRANSFERENCIA.md`, `MIGRACION_REACT.md`, `VALIDACION.md` y utilidades en `scripts/`.
+
+### Conservado
+- Código Streamlit original íntegro en `legado_streamlit/`, fuera del despliegue.
+- Alias, tablas, orden y semántica de las consultas del aplicativo original.

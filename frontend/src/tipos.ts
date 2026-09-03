@@ -1,0 +1,183 @@
+export type ModoBusqueda = 'filters' | 'business_name' | 'nit' | 'batch_nits';
+
+export type DefinicionFiltro = {
+  key: string;
+  query_column?: string;
+  label: string;
+  group: string;
+  help?: string;
+  options?: string[];
+  truncated?: boolean;
+};
+
+export type SolicitudBusqueda = {
+  mode: ModoBusqueda;
+  filters: Record<string, string[]>;
+  term: string;
+  nits: string[];
+  page: number;
+  page_size: number;
+};
+
+export type Fila = Record<string, string | number | null>;
+
+export type RespuestaBusqueda = {
+  total: number;
+  page: number;
+  page_size: number;
+  page_count: number;
+  preview_truncated: boolean;
+  columns: string[];
+  rows: Fila[];
+  summary: string;
+  demo: boolean;
+};
+
+export type Fuente = { name: string; detail: string; cut: string };
+
+export type Metadatos = {
+  title: string;
+  version: string;
+  demo: boolean;
+  data_connection: 'demo' | 'configured' | 'missing_configuration' | 'connected' | 'error';
+  preview_columns: string[];
+  export_columns: string[];
+  column_sections: Array<{ title: string; columns: string[] }>;
+  sources: Fuente[];
+  periods: Record<string, string>;
+  notes: string[];
+  filters: DefinicionFiltro[];
+  filter_groups: string[];
+  export_max_rows: number;
+  preview_max_rows: number;
+  batch_max_nits: number;
+  contact_fields_included: boolean;
+};
+
+export type EntradaGlosario = {
+  variable: string;
+  description: string;
+  description_paragraphs: string[];
+  sources: string;
+  category: string;
+  in_export: boolean;
+  in_preview: boolean;
+  filter_key: string | null;
+  filter_label: string | null;
+  origin: 'glosario' | 'aplicativo';
+};
+
+export type RespuestaGlosario = {
+  entries: EntradaGlosario[];
+  count: number;
+  institutional_count: number;
+  supplementary_count: number;
+  categories: string[];
+  coverage: { export_columns: number; defined_export_columns: number; missing: string[] };
+  updated_at: string;
+  file_name: string;
+};
+
+export type Ficha = {
+  nit: string;
+  record: Fila;
+  sections: Array<{ title: string; fields: Array<{ name: string; value: string | number | null }> }>;
+  matches: number;
+  demo: boolean;
+};
+
+export type Salud = {
+  status: string;
+  version: string;
+  data_connection: Metadatos['data_connection'];
+  access_control: 'basic' | 'open';
+  frontend_built: boolean;
+  demo_mode: boolean;
+  snowflake: {
+    connector_installed: boolean;
+    connector_version: string | null;
+    pandas_arrow: boolean;
+    missing_variables: string[];
+    key_sources: string[];
+    connection_error: boolean;
+    verified: boolean;
+    verified_at: string | null;
+  };
+};
+
+export type PasoDiagnostico = {
+  paso: string;
+  descripcion: string;
+  ok: boolean;
+  detalle?: unknown;
+  error?: string;
+  tipo_error?: string;
+  segundos: number;
+};
+
+export type Diagnostico = {
+  modo: 'demo' | 'snowflake';
+  version?: string;
+  todo_ok?: boolean;
+  resumen: string;
+  siguiente_paso: string;
+  pasos: PasoDiagnostico[];
+};
+
+// ── Asistente de análisis (Snowflake Cortex) ───────────────────────────────
+
+export type SugerenciaIA = { grupo: string; texto: string };
+
+export type EstadoIA = {
+  disponible: boolean;
+  motivo: string;
+  vista_semantica: string;
+  modelo: string;
+  advertencia: string;
+  sugerencias: SugerenciaIA[];
+  max_caracteres: number;
+};
+
+export type SerieGrafica = { nombre: string; color: string; valores: number[] };
+
+export type EspecGrafica = {
+  tipo: 'barras' | 'agrupadas' | 'apiladas' | 'lineas' | 'indicador';
+  titulo: string;
+  categorias: string[];
+  series: SerieGrafica[];
+  formato: 'entero' | 'usd' | 'cop' | 'porcentaje';
+  eje: string;
+  nota: string;
+};
+
+export type MetaIA = {
+  modelo: string;
+  degradado: boolean;
+  cifras_verificadas: boolean;
+  ms_interpretacion: number;
+  ms_consulta: number;
+  ms_total: number;
+  version: string;
+  vista_semantica: string;
+};
+
+/** Evento del flujo SSE: avance por etapas, error, o resultado final. */
+export type EventoIA =
+  | { tipo: 'etapa'; consulta_id: string; etapa: string; detalle: string; sql?: string }
+  | { tipo: 'error'; consulta_id?: string; mensaje: string }
+  | {
+      tipo: 'final';
+      consulta_id: string;
+      texto: string;
+      sql: string;
+      columnas: string[];
+      filas: Array<Array<string | number | null>>;
+      n_filas: number;
+      truncado: boolean;
+      grafica: EspecGrafica | null;
+      sugerencias: string[];
+      advertencia: string;
+      meta: MetaIA;
+    };
+
+export type RespuestaIA = Extract<EventoIA, { tipo: 'final' }>;

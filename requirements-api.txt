@@ -1,0 +1,25 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+python-dotenv==1.0.1
+pandas==2.2.3
+openpyxl==3.1.5
+XlsxWriter==3.2.9
+# El extra «pandas» arrastra pyarrow, que el conector necesita para devolver
+# resultados como DataFrame (Snowpark .to_pandas()). Sin él todas las consultas
+# que traen tabla fallan aunque la conexión esté bien. El aplicativo Streamlit
+# original lo traía como pyarrow==17.0.0; aquí se deja que pip resuelva la
+# versión compatible con el conector.
+snowflake-snowpark-python[pandas]==1.25.0
+# «cryptography» llega como dependencia del conector de Snowflake y se usa para
+# normalizar la llave privada (PEM/DER, cifrada o no). No se fija su versión
+# para no entrar en conflicto con la que exige el conector.
+
+# ── Asistente de análisis (Snowflake Cortex) ─────────────────────────────────
+# PyJWT firma el token de la API REST de Cortex con la MISMA llave RSA que ya usa
+# el conector: no hay que configurar ningún secreto nuevo.
+PyJWT==2.13.0
+# «requests» llega con el conector de Snowflake, pero el asistente lo importa de
+# forma directa; se declara para que la dependencia sea explícita.
+requests==2.34.2
+# Presentación de PowerPoint con el resultado del asistente.
+python-pptx==1.0.2

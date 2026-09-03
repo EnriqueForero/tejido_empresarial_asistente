@@ -1,0 +1,32 @@
+# Dependencias para ejecutar las pruebas SIN el conector de Snowflake.
+#
+# Por qué existe este archivo: el build de validación del notebook corre en
+# Google Colab, cuyo Python no siempre admite `snowflake-snowpark-python`. Como
+# el backend importa el conector de forma tolerante y las pruebas corren en modo
+# demostración, allí se instala esta lista en vez de `requirements-dev.txt`.
+#
+# El riesgo de tener dos listas es que se desvíen —ya ocurrió tres veces:
+# faltó `cryptography`, luego `pyarrow` y luego `python-pptx`—. Por eso
+# `tests/test_dependencias.py` compara este archivo contra
+# `requirements-api.txt` y falla si aparece una dependencia de producción que
+# aquí no esté declarada ni exceptuada a propósito.
+#
+# Mantener las MISMAS versiones que requirements-api.txt.
+
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+python-dotenv==1.0.1
+pandas==2.2.3
+openpyxl==3.1.5
+XlsxWriter==3.2.9
+PyJWT==2.13.0
+requests==2.34.2
+python-pptx==1.0.2
+
+# En producción `cryptography` llega como dependencia del conector; aquí hay que
+# pedirla explícitamente porque el conector no se instala.
+cryptography
+
+# Sólo para las pruebas.
+pytest==8.3.5
+httpx==0.28.1

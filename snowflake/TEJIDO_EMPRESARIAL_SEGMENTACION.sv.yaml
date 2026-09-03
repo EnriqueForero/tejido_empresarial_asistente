@@ -1,0 +1,1082 @@
+name: TEJIDO_EMPRESARIAL_SEGMENTACION
+description: >-
+  Modelo semántico del tejido empresarial colombiano para la segmentación de empresas y el análisis
+  de su potencial e historial exportador (ProColombia). Representa datos al nivel de una fila por
+  empresa (NIT), integrando registro mercantil (RUES), estados financieros (Supersociedades),
+  exportaciones de bienes (DANE-DIAN), gestión comercial de ProColombia (CRM: negocios, servicios,
+  oportunidades) y características socioeconómicas del municipio donde está domiciliada la empresa.
+  Permite responder preguntas sobre cuántas empresas hay por región/sector/tamaño, cuánto exportan,
+  hacia dónde, con qué productos, qué empresas han sido atendidas por ProColombia y cuáles son
+  candidatas a convertirse en exportadoras. Valores monetarios: ACTIVOS, INGRESOS_OPERACIONALES y
+  UTILIDAD en pesos colombianos (COP); EXPO_* en dólares estadounidenses (USD FOB).
+  Los indicadores municipales (_%_MUNICIPIO) son porcentajes 0-100 del municipio, no de la empresa.
+
+tables:
+  - name: EMPRESAS
+    description: >-
+      Representa el universo de empresas formales de Colombia con matrícula mercantil vigente.
+      Grano: una fila por empresa identificada por NIT (1,68 millones de empresas). Cada fila reúne
+      la identificación de la empresa, su ubicación, actividad económica CIIU, tamaño, indicadores
+      financieros y de empleo, su perfil exportador de los últimos 5 años (producto principal,
+      país destino principal y valores exportados por año), la atención recibida de ProColombia y
+      las características socioeconómicas de su municipio. Solo el 0,9% de las empresas ha
+      exportado en los últimos 5 años; para las demás, las columnas de exportación tienen el texto
+      'No exportó ult. 5 años' y los valores EXPO_* son 0.
+    base_table:
+      database: APP_SEGMENTACION_EXPORTACIONES
+      schema: SEGMENTACION
+      table: TEJIDO_EMPRESARIAL_COMPLETO_BASE_MUNICIPIOS_P
+    primary_key:
+      columns: [NIT]
+
+    dimensions:
+      # ---------- Identificación ----------
+      - name: NIT
+        expr: NIT
+        data_type: VARCHAR
+        unique: true
+        description: >-
+          Número de Identificación Tributaria de la empresa, sin dígito de verificación. Identifica de
+          forma única a cada empresa y es la llave para contar empresas (usar COUNT DISTINCT).
+        synonyms: [nit, identificacion tributaria, id empresa, numero de identificacion, rut]
+        sample_values: ["830046582", "830068604", "37196144"]
+      - name: DIGITO_VERIFICACION
+        expr: DIGITO_VERIFICACION
+        data_type: VARCHAR
+        description: Dígito de verificación del NIT (0-9).
+        synonyms: [dv, digito verificador]
+      - name: RAZON_SOCIAL
+        expr: RAZON_SOCIAL
+        data_type: VARCHAR
+        description: >-
+          Nombre legal o razón social de la empresa tal como aparece en el registro mercantil. Para
+          personas naturales corresponde al nombre del comerciante. Usar ILIKE para búsquedas por nombre.
+        synonyms: [nombre de la empresa, empresa, razon social, nombre comercial, compañia, sociedad]
+        sample_values: ["COMERCIALIZADORA INTERNACIONAL FLORES DE APOSENTOS S A S", "TELLEZ ASCANIO FRANCELINA"]
+
+      # ---------- Tamaño y clasificación jurídica ----------
+      - name: TAMANO
+        expr: TAMANO
+        data_type: VARCHAR
+        description: >-
+          Tamaño de la empresa según clasificación oficial (Decreto 957 de 2019, por ingresos).
+          Valores: 'Micro' (94%), 'Pequeña', 'Mediana', 'Grande', 'No determinado'.
+          Pyme = Pequeña + Mediana. MiPyme = Micro + Pequeña + Mediana.
+        synonyms: [tamaño, tamaño de empresa, clasificacion por tamaño, micro, pequeña, mediana, grande, pyme, mipyme]
+        sample_values: ["Micro", "Pequeña", "Mediana", "Grande"]
+      - name: ORGANIZACION_JURIDICA
+        expr: ORGANIZACION_JURIDICA
+        data_type: VARCHAR
+        description: >-
+          Tipo de organización jurídica registrado en cámara de comercio, en mayúsculas. Ejemplos:
+          'PERSONA NATURAL', 'SOCIEDADES POR ACCIONES SIMPLIFICADAS SAS', 'SOCIEDAD LIMITADA',
+          'SOCIEDAD ANONIMA', 'EMPRESAS UNIPERSONALES', 'FUNDACIONES', 'COOPERATIVAS...'.
+        synonyms: [tipo de sociedad, naturaleza juridica, forma juridica, tipo de empresa, sas, sociedad anonima, ltda]
+        sample_values: ["PERSONA NATURAL", "SOCIEDADES POR ACCIONES SIMPLIFICADAS SAS", "SOCIEDAD LIMITADA", "SOCIEDAD ANONIMA"]
+      - name: CATEGORIA_MATRICULA
+        expr: CATEGORIA_MATRICULA
+        data_type: VARCHAR
+        description: >-
+          Categoría de la matrícula mercantil. Valores: 'PERSONA NATURAL' (62%),
+          'SOCIEDAD o PERSONA JURIDICA PRINCIPAL' (38%), 'No determinado'.
+        synonyms: [categoria de matricula, persona natural, persona juridica, tipo de matricula]
+        sample_values: ["PERSONA NATURAL", "SOCIEDAD o PERSONA JURIDICA PRINCIPAL"]
+      - name: INVERSION_EXTRANJERA
+        expr: INVERSION_EXTRANJERA
+        data_type: VARCHAR
+        description: >-
+          Indica si la empresa tiene participación de capital extranjero. Valores: 'Sí', 'No', 'No determinado'.
+        synonyms: [capital extranjero, ied, inversion extranjera directa, empresa extranjera, multinacional]
+        sample_values: ["Sí", "No"]
+      - name: RANGO_ANTIGUEDAD
+        expr: RANGO_ANTIGUEDAD
+        data_type: VARCHAR
+        description: >-
+          Rango de años de existencia de la empresa desde su matrícula, con prefijo alfabético que
+          permite ordenar. Valores: 'A. 0 - 5 años', 'B. 6 - 10 años', 'C. 11 - 15 años',
+          'D. 16 - 20 años', 'E. 21 - 25 años', 'F. 26 - 30 años', 'G. 31 - 35 años',
+          'H. 36 - 40 años', 'I. 41 - 45 años', 'J. 46 - 50 años', 'K. Más de 50 años', 'L. Sin clasificar'.
+        synonyms: [antiguedad, rango de antiguedad, años de existencia, edad de la empresa, madurez]
+        sample_values: ["A. 0 - 5 años", "B. 6 - 10 años", "K. Más de 50 años"]
+      - name: RANGO_INGRESOS
+        expr: RANGO_INGRESOS
+        data_type: VARCHAR
+        description: >-
+          Rango de ingresos operacionales anuales en COP, con prefijo alfabético ordenable.
+          Valores: 'A. COP 0', 'B. COP 1 - 1.0 Millones', 'C. COP 1.0 Millones - 3.0 Millones',
+          'D. COP 3.0 Millones - 6.0 Millones', 'E. COP 6.0 Millones - 12.0 Millones',
+          'F. COP 12.0 Millones - 24.0 Millones', 'G. COP 24.0 Millones - 50.0 Millones',
+          'H. COP 50.0 Millones - 111.9 Millones', 'I. COP 111.9 Millones - 328.5 Millones',
+          'J. COP 328.5 Millones - 1,260.6 Millones', 'K. Más de COP 1,260.6 Millones',
+          'L. Información no disponible'.
+        synonyms: [rango de ingresos, nivel de ingresos, tramo de ventas, rango de ventas]
+        sample_values: ["A. COP 0", "G. COP 24.0 Millones - 50.0 Millones", "K. Más de COP 1,260.6 Millones"]
+
+      # ---------- Ubicación de la empresa ----------
+      - name: MACRORREGION_EMP
+        expr: MACRORREGION_EMP
+        data_type: VARCHAR
+        description: >-
+          Macrorregión de Colombia donde está domiciliada la empresa. Valores: 'Andes orientales',
+          'Andes occidentales', 'Gran Caribe', 'Pacífico', 'Amazonía- Orinoquía', 'Macizo', 'No determinado'.
+        synonyms: [macrorregion, macro region, region, region de la empresa, zona del pais]
+        sample_values: ["Andes orientales", "Gran Caribe", "Pacífico"]
+      - name: COD_DEPARTAMENTO_EMP
+        expr: COD_DEPARTAMENTO_EMP
+        data_type: VARCHAR
+        description: Código DANE (DIVIPOLA) de 2 dígitos del departamento de domicilio de la empresa.
+        synonyms: [codigo departamento, cod dane departamento, divipola departamento]
+        sample_values: ["11", "05", "76"]
+      - name: DEPARTAMENTO_EMP
+        expr: DEPARTAMENTO_EMP
+        data_type: VARCHAR
+        description: >-
+          Departamento de Colombia donde está domiciliada la empresa (33 departamentos + Bogotá).
+          Bogotá aparece como 'Bogotá, D.C.'. Ejemplos: 'Antioquia', 'Valle del Cauca', 'Atlántico',
+          'Cundinamarca', 'Santander', 'Norte de Santander', 'Archipiélago de San Andrés, Providencia y Santa Catalina'.
+          Para preguntas sobre el departamento de la empresa usar esta columna (no DEPARTAMENTO_EXPO).
+        synonyms: [departamento, departamento de la empresa, departamento domicilio, dpto, ubicacion]
+        sample_values: ["Bogotá, D.C.", "Antioquia", "Valle del Cauca", "Atlántico"]
+      - name: COD_MUNICIPIO_EMP
+        expr: COD_MUNICIPIO_EMP
+        data_type: VARCHAR
+        description: Código DANE (DIVIPOLA) de 5 dígitos del municipio de domicilio de la empresa.
+        synonyms: [codigo municipio, cod dane municipio, divipola municipio]
+        sample_values: ["11001", "05001", "54001"]
+      - name: MUNICIPIO_EMP
+        expr: MUNICIPIO_EMP
+        data_type: VARCHAR
+        description: >-
+          Municipio de Colombia donde está domiciliada la empresa (1.028 municipios). Bogotá aparece como
+          'Bogotá, D.C.'; Cúcuta como 'San José de Cúcuta'. Usar esta columna para preguntas sobre
+          ciudad o municipio de la empresa.
+        synonyms: [municipio, ciudad, municipio de la empresa, ciudad de la empresa, localidad]
+        sample_values: ["Bogotá, D.C.", "Medellín", "Cali", "San José de Cúcuta"]
+      - name: DIRECCION
+        expr: DIRECCION
+        data_type: VARCHAR
+        description: Dirección comercial registrada de la empresa. Dato de contacto; no usar para agrupar.
+        synonyms: [direccion, domicilio]
+      - name: TELEFONO
+        expr: TELEFONO
+        data_type: VARCHAR
+        description: Teléfono de contacto registrado. Dato de contacto; no usar para agrupar.
+        synonyms: [telefono, celular, contacto telefonico]
+      - name: EMAIL
+        expr: EMAIL
+        data_type: VARCHAR
+        description: Correo electrónico registrado de la empresa. Dato de contacto; no usar para agrupar.
+        synonyms: [correo, email, correo electronico, mail]
+      - name: ID_REPRESENTANTE_LEGAL
+        expr: ID_REPRESENTANTE_LEGAL
+        data_type: VARCHAR
+        description: Número de identificación (cédula) del representante legal.
+        synonyms: [cedula representante legal, identificacion representante]
+      - name: REPRESENTANTE_LEGAL
+        expr: REPRESENTANTE_LEGAL
+        data_type: VARCHAR
+        description: Nombre del representante legal de la empresa. 'No determinado' cuando no está registrado.
+        synonyms: [representante legal, gerente, apoderado, quien representa la empresa]
+
+      # ---------- Actividad económica CIIU ----------
+      - name: COD_CIIU_1
+        expr: COD_CIIU_1
+        data_type: VARCHAR
+        description: >-
+          Código CIIU Rev. 4 A.C. de 4 dígitos de la actividad económica principal de la empresa.
+          Ejemplos: '4711' comercio al por menor no especializado, '1410' confección de prendas,
+          '4620' comercio al por mayor de materias primas agropecuarias.
+        synonyms: [ciiu, codigo ciiu, ciiu principal, actividad principal codigo, ciiu 1]
+        sample_values: ["4711", "1410", "4620", "9004"]
+      - name: DESCRIPCION_CIIU_1
+        expr: DESCRIPCION_CIIU_1
+        data_type: VARCHAR
+        description: >-
+          Descripción de la actividad económica principal (CIIU 1). Usar esta columna cuando se pregunte
+          por la actividad económica, el giro o el oficio de la empresa. Usar ILIKE para búsquedas por palabra.
+        synonyms: [actividad economica, actividad principal, descripcion ciiu, giro, a que se dedica, oficio]
+        sample_values: ["Confección de prendas de vestir, excepto prendas de piel", "Creación audiovisual"]
+      - name: CADENA_CIIU_1
+        expr: CADENA_CIIU_1
+        data_type: VARCHAR
+        description: >-
+          Cadena productiva de ProColombia asignada según la actividad económica principal (CIIU 1).
+          Valores: 'Agroalimentos', 'Metalmecánica y Otras Industrias', 'Químicos y Ciencias de la Vida',
+          'Sistema Moda', 'Industrias 4.0', 'Turismo', 'Logística e Infraestructura', 'Mineras',
+          'Energía', 'CIIU no aplica categoría ProColombia' (56% de empresas, actividades fuera del
+          foco de promoción). Para la cadena de lo efectivamente exportado usar CADENA.
+        synonyms: [cadena ciiu, cadena productiva por actividad, cadena por ciiu, cadena procolombia actividad]
+        sample_values: ["Agroalimentos", "Sistema Moda", "Industrias 4.0", "CIIU no aplica categoría ProColombia"]
+      - name: VALOR_AGREGADO_CIIU_1
+        expr: VALOR_AGREGADO_CIIU_1
+        data_type: VARCHAR
+        description: >-
+          Clasificación de intensidad tecnológica / de conocimiento de la actividad principal (taxonomía
+          OCDE-Eurostat). Valores: 'Bienes primarios', 'Bienes tecnología baja', 'Bienes tecnología
+          media-baja', 'Bienes tecnología media-alta', 'Bienes tecnología alta', 'Servicios menos
+          intensivos en conocimiento', 'Servicios de mercado intensivos en conocimiento', 'Servicios de
+          alta tecnología intensivos en conocimiento', 'Servicios financieros intensivos en conocimiento',
+          'Otros servicios intensivos en conocimiento', 'Servicios no clasificados', 'No determinado'.
+        synonyms: [intensidad tecnologica, valor agregado actividad, nivel tecnologico, intensidad de conocimiento]
+        sample_values: ["Bienes tecnología alta", "Servicios menos intensivos en conocimiento", "Bienes primarios"]
+      - name: CIIU_2
+        expr: CIIU_2
+        data_type: VARCHAR
+        description: Código CIIU de la actividad económica secundaria. 'No determinado' si no tiene.
+        synonyms: [ciiu secundario, segunda actividad, ciiu 2]
+      - name: DESCRIPCION_CIIU_2
+        expr: DESCRIPCION_CIIU_2
+        data_type: VARCHAR
+        description: Descripción de la actividad económica secundaria (CIIU 2).
+        synonyms: [actividad secundaria, descripcion ciiu 2]
+      - name: CADENA_CIIU_2
+        expr: CADENA_CIIU_2
+        data_type: VARCHAR
+        description: Cadena productiva de ProColombia asociada a la actividad secundaria (CIIU 2).
+        synonyms: [cadena ciiu 2, cadena actividad secundaria]
+      - name: CIIU_3
+        expr: CIIU_3
+        data_type: VARCHAR
+        description: Código CIIU de la tercera actividad económica registrada. 'No determinado' si no tiene.
+        synonyms: [ciiu 3, tercera actividad]
+      - name: DESCRIPCION_CIIU_3
+        expr: DESCRIPCION_CIIU_3
+        data_type: VARCHAR
+        description: Descripción de la tercera actividad económica (CIIU 3).
+      - name: CADENA_CIIU_3
+        expr: CADENA_CIIU_3
+        data_type: VARCHAR
+        description: Cadena productiva de ProColombia asociada a la tercera actividad (CIIU 3).
+      - name: CIIU_4
+        expr: CIIU_4
+        data_type: VARCHAR
+        description: Código CIIU de la cuarta actividad económica registrada. 'No determinado' si no tiene.
+        synonyms: [ciiu 4, cuarta actividad]
+      - name: DESCRIPCION_CIIU_4
+        expr: DESCRIPCION_CIIU_4
+        data_type: VARCHAR
+        description: Descripción de la cuarta actividad económica (CIIU 4).
+      - name: CADENA_CIIU_4
+        expr: CADENA_CIIU_4
+        data_type: VARCHAR
+        description: Cadena productiva de ProColombia asociada a la cuarta actividad (CIIU 4).
+      - name: CADENA_SEGMENTACION
+        expr: CADENA_SEGMENTACION
+        data_type: VARCHAR
+        description: >-
+          Cadena productiva definitiva usada para la segmentación de ProColombia. Coincide con
+          CADENA_CIIU_1 salvo ajustes manuales (0,1% de casos). Mismos valores que CADENA_CIIU_1.
+          Es la columna preferida para segmentar empresas por cadena cuando la pregunta no distingue
+          entre actividad y exportación.
+        synonyms: [cadena de segmentacion, cadena productiva, cadena procolombia, segmento, cadena]
+        sample_values: ["Agroalimentos", "Metalmecánica y Otras Industrias", "Turismo", "Químicos y Ciencias de la Vida"]
+      - name: FUENTES
+        expr: FUENTES
+        data_type: VARCHAR
+        description: >-
+          Fuentes de información que aportaron datos de la empresa, separadas por coma. Combinaciones de:
+          'RUES' (registro mercantil), 'Supersociedades' (estados financieros), 'Exportaciones de bienes
+          DANE-DIAN', 'CRM ProColombia'. Ejemplo: 'RUES, Supersociedades, CRM ProColombia'.
+          Para saber si incluye una fuente usar CONTAINS o ILIKE '%Supersociedades%'.
+        synonyms: [fuente, fuentes de informacion, origen de los datos, procedencia]
+        sample_values: ["RUES", "RUES, Exportaciones de bienes DANE-DIAN", "RUES, Supersociedades, CRM ProColombia"]
+
+      # ---------- Perfil exportador ----------
+      - name: HA_EXPORTADO
+        expr: HA_EXPORTADO
+        data_type: VARCHAR
+        description: >-
+          Indica si la empresa registró exportaciones de bienes en los últimos 5 años (2021-2026).
+          Valores: 'Sí' (14.838 empresas, 0,9%), 'No'. Es la bandera principal para distinguir
+          empresas exportadoras de no exportadoras.
+        synonyms: [exportadora, es exportadora, ha exportado, exporta, empresa exportadora, exportador]
+        sample_values: ["Sí", "No"]
+      - name: TRAYECTORIA_EXPORTADORA
+        expr: TRAYECTORIA_EXPORTADORA
+        data_type: VARCHAR
+        description: >-
+          Segmento de trayectoria exportadora definido por ProColombia según constancia y montos.
+          Valores: 'Futuros exportadores' (no han exportado, 99%), 'No constantes' (exportan de forma
+          intermitente), 'Pymex' (pymes exportadoras constantes), 'Top exportadora' (grandes exportadoras
+          constantes), 'Mineras, chatarra, otros' (exportadoras de bienes fuera del foco de promoción).
+        synonyms: [trayectoria, trayectoria exportadora, segmento exportador, pymex, top exportadora, futuros exportadores, no constantes, constancia exportadora]
+        sample_values: ["Futuros exportadores", "No constantes", "Pymex", "Top exportadora"]
+      - name: TIPO
+        expr: TIPO
+        data_type: VARCHAR
+        description: >-
+          Clasifica las exportaciones de la empresa como mineras o no mineras (no minero-energéticas, NME).
+          Valores: 'Mineras', 'No Mineras', 'No exportó ult. 5 años'.
+        synonyms: [tipo de exportacion, minera, no minera, minero energetico, nme]
+        sample_values: ["No Mineras", "Mineras", "No exportó ult. 5 años"]
+      - name: EXPORTADORA_NME_ACTIVIDAD
+        expr: EXPORTADORA_NME_ACTIVIDAD
+        data_type: VARCHAR
+        description: >-
+          Indica si la empresa es exportadora no minero-energética (NME) con actividad exportadora
+          relevante para ProColombia. Valores: 'Sí' (10.528 empresas), 'No'.
+        synonyms: [exportadora nme, exportadora no minero energetica, exportadora no minera]
+        sample_values: ["Sí", "No"]
+      - name: CADENA
+        expr: CADENA
+        data_type: VARCHAR
+        description: >-
+          Cadena productiva de ProColombia del producto principal exportado (según posición arancelaria).
+          Solo aplica a exportadoras; para las demás es 'No exportó ult. 5 años'. Valores: 'Agroalimentos',
+          'Metalmecánica y Otras Industrias', 'Químicos y Ciencias de la Vida', 'Sistema Moda',
+          'Industrias 4.0', 'Mineras', 'Otros', 'No exportó ult. 5 años'.
+        synonyms: [cadena exportada, cadena del producto exportado, cadena de exportacion]
+        sample_values: ["Agroalimentos", "Sistema Moda", "No exportó ult. 5 años"]
+      - name: SECTOR
+        expr: SECTOR
+        data_type: VARCHAR
+        description: >-
+          Sector de ProColombia del producto principal exportado (65 sectores). Solo aplica a
+          exportadoras; para las demás es 'No exportó ult. 5 años'. Ejemplos: 'Café', 'Flores y plantas
+          vivas', 'Frutas y hortalizas frescas y procesadas', 'Textiles y confecciones', 'Software y
+          servicios ti', 'Cosméticos y productos de aseo', 'Farmacéutico', 'Plástico y caucho',
+          'Metalmecánica', 'Banano', 'Cacao y sus derivados', 'Autopartes'.
+        synonyms: [sector, sector exportador, sector del producto exportado, sector procolombia]
+        sample_values: ["Café", "Flores y plantas vivas", "Textiles y confecciones", "No exportó ult. 5 años"]
+      - name: SUBSECTOR
+        expr: SUBSECTOR
+        data_type: VARCHAR
+        description: >-
+          Subsector de ProColombia del producto principal exportado (241 subsectores), nivel más
+          detallado que SECTOR. Solo aplica a exportadoras. Ejemplo: 'Flores frescas'.
+        synonyms: [subsector, subsector exportador, subsector del producto]
+        sample_values: ["Flores frescas", "Producción audiovisual", "No exportó ult. 5 años"]
+      - name: COD_POSICION_ARANCELARIA
+        expr: COD_POSICION_ARANCELARIA
+        data_type: VARCHAR
+        description: >-
+          Código de la subpartida arancelaria (10 dígitos, sistema armonizado Colombia) del producto
+          principal exportado por la empresa. Los primeros 2 dígitos son el capítulo, los primeros 6 la
+          subpartida HS6. Solo aplica a exportadoras.
+        synonyms: [posicion arancelaria, subpartida, partida arancelaria, codigo arancelario, hs, producto codigo]
+        sample_values: ["0603129000", "0901119000"]
+      - name: DESC_POSICION_ARANCELARIA
+        expr: DESC_POSICION_ARANCELARIA
+        data_type: VARCHAR
+        description: >-
+          Descripción del producto principal exportado (subpartida arancelaria). Usar ILIKE para
+          búsquedas por producto (p. ej. '%café%', '%aguacate%').
+        synonyms: [producto exportado, producto principal, descripcion arancelaria, que exporta, bien exportado]
+        sample_values: ["Los demás claveles frescos, cortados para ramos o adornos."]
+      - name: VALOR_AGREGADO_EXPO
+        expr: VALOR_AGREGADO_EXPO
+        data_type: VARCHAR
+        description: >-
+          Nivel de valor agregado/intensidad tecnológica del producto principal exportado (clasificación
+          Lall). Valores: 'Primarios', 'Manufacturas basadas en recursos naturales', 'Manufacturas de baja
+          tecnologia', 'Manufacturas de tecnología media', 'Manufactura de alta tecnología', 'Servicios de
+          alta tecnología intensivos en conocimiento', 'Servicios de mercado intensivos en conocimiento',
+          'Otros servicios intensivos en conocimiento', 'Otras transacciones', 'No exportó ult. 5 años'.
+        synonyms: [valor agregado exportado, intensidad tecnologica exportaciones, tipo de manufactura exportada]
+        sample_values: ["Manufacturas de baja tecnologia", "Primarios", "Manufactura de alta tecnología"]
+      - name: COD_DEPARTAMENTO_EXPO
+        expr: COD_DEPARTAMENTO_EXPO
+        data_type: VARCHAR
+        description: Código DANE del departamento de origen declarado de las exportaciones. Solo aplica a exportadoras.
+        synonyms: [codigo departamento origen exportacion]
+      - name: DEPARTAMENTO_EXPO
+        expr: DEPARTAMENTO_EXPO
+        data_type: VARCHAR
+        description: >-
+          Departamento de origen de las exportaciones según la declaración de exportación (puede diferir
+          del domicilio de la empresa, p. ej. empresa en Bogotá que exporta flores desde Cundinamarca).
+          Solo aplica a exportadoras; 'No exportó ult. 5 años' en las demás. Usar solo cuando la pregunta
+          sea explícitamente sobre el origen de la exportación; para el departamento de la empresa usar DEPARTAMENTO_EMP.
+        synonyms: [departamento de origen de exportaciones, departamento exportador, origen de la exportacion]
+        sample_values: ["Cundinamarca", "Antioquia", "No exportó ult. 5 años"]
+      - name: PAIS_DESTINO
+        expr: PAIS_DESTINO
+        data_type: VARCHAR
+        description: >-
+          País de destino principal de las exportaciones de la empresa (158 países). Solo aplica a
+          exportadoras; 'No exportó ult. 5 años' en las demás. Ejemplos: 'Estados Unidos', 'Ecuador',
+          'Panamá', 'Venezuela', 'Perú', 'México', 'República Dominicana', 'Costa Rica', 'Chile', 'España',
+          'Países Bajos', 'Japón'.
+        synonyms: [pais destino, pais de destino, mercado destino, destino de exportacion, a donde exporta, mercado]
+        sample_values: ["Estados Unidos", "Ecuador", "Panamá", "España", "No exportó ult. 5 años"]
+      - name: HUB
+        expr: HUB
+        data_type: VARCHAR
+        description: >-
+          Hub o región comercial de ProColombia a la que pertenece el país destino principal. Valores:
+          'Latinoamérica', 'Norteamérica', 'Alianza Pacífico', 'Europa', 'Asia', 'Otros', 'Colombia',
+          'No exportó ult. 5 años'.
+        synonyms: [hub, hub comercial, region destino, bloque destino, region del mercado]
+        sample_values: ["Latinoamérica", "Norteamérica", "Europa", "Asia"]
+
+      # ---------- Relación con ProColombia ----------
+      - name: ATENDIDA_PC
+        expr: ATENDIDA_PC
+        data_type: VARCHAR
+        description: >-
+          Indica si la empresa ha sido atendida por ProColombia (registra al menos un negocio, servicio u
+          oportunidad en el CRM). Valores: 'Sí' (10.470 empresas), 'No'.
+        synonyms: [atendida, atendida por procolombia, cliente procolombia, empresa atendida, acompañada por procolombia]
+        sample_values: ["Sí", "No"]
+      - name: NEGOCIOS
+        expr: NEGOCIOS
+        data_type: VARCHAR
+        description: >-
+          Indica si la empresa ha reportado negocios (ventas de exportación facilitadas) con ProColombia.
+          Valores: 'Sí', 'No'.
+        synonyms: [tiene negocios, negocios con procolombia, ha cerrado negocios]
+        sample_values: ["Sí", "No"]
+      - name: SERVICIOS
+        expr: SERVICIOS
+        data_type: VARCHAR
+        description: Indica si la empresa ha recibido servicios de ProColombia (capacitaciones, asesorías, ferias, etc.). Valores 'Sí', 'No'.
+        synonyms: [recibio servicios, servicios de procolombia, ha recibido servicios]
+        sample_values: ["Sí", "No"]
+      - name: OPORTUNIDADES
+        expr: OPORTUNIDADES
+        data_type: VARCHAR
+        description: Indica si a la empresa se le han compartido oportunidades comerciales por ProColombia. Valores 'Sí', 'No'.
+        synonyms: [tiene oportunidades, oportunidades comerciales, oportunidades de procolombia]
+        sample_values: ["Sí", "No"]
+
+      # ---------- Municipio (Base Municipios) ----------
+      - name: CODIGO_MUNICIPIO_BASE_MUNICIPIOS
+        expr: CODIGO_MUNICIPIO_BASE_MUNICIPIOS
+        data_type: VARCHAR
+        description: Código DANE del municipio usado para cruzar con la base de indicadores municipales. Equivale a COD_MUNICIPIO_EMP.
+      - name: MUNICIPIO_BASE_MUNICIPIOS
+        expr: MUNICIPIO_BASE_MUNICIPIOS
+        data_type: VARCHAR
+        description: Nombre del municipio en la base de indicadores municipales. Equivale a MUNICIPIO_EMP; preferir MUNICIPIO_EMP.
+      - name: CODIGO_DEPARTAMENTO_BASE_MUNICIPIOS
+        expr: CODIGO_DEPARTAMENTO_BASE_MUNICIPIOS
+        data_type: VARCHAR
+        description: Código DANE del departamento en la base de indicadores municipales. Equivale a COD_DEPARTAMENTO_EMP.
+      - name: DEPARTAMENTO_BASE_MUNICIPIOS
+        expr: DEPARTAMENTO_BASE_MUNICIPIOS
+        data_type: VARCHAR
+        description: Nombre del departamento en la base de indicadores municipales. Equivale a DEPARTAMENTO_EMP; preferir DEPARTAMENTO_EMP.
+      - name: MENOR_200K_HABITANTES
+        expr: MENOR_200K_HABITANTES
+        data_type: VARCHAR
+        description: >-
+          Indica si el municipio de la empresa tiene menos de 200.000 habitantes (municipio pequeño o
+          intermedio, foco de regionalización). Valores: 'Sí' (37% de empresas), 'No', nulo si no se
+          pudo cruzar el municipio.
+        synonyms: [municipio pequeño, menos de 200 mil habitantes, municipio menor, ciudad pequeña, ciudad intermedia]
+        sample_values: ["Sí", "No"]
+      - name: PDET
+        expr: PDET
+        data_type: VARCHAR
+        description: >-
+          Indica si el municipio de la empresa es un municipio PDET (Programas de Desarrollo con Enfoque
+          Territorial, 170 municipios priorizados por el Acuerdo de Paz). Valores: 'Sí', 'No'.
+        synonyms: [pdet, municipio pdet, territorio pdet, enfoque territorial, municipios del acuerdo de paz]
+        sample_values: ["Sí", "No"]
+      - name: SUBREGION_PDET
+        expr: SUBREGION_PDET
+        data_type: VARCHAR
+        description: >-
+          Subregión PDET a la que pertenece el municipio (16 subregiones), en mayúsculas. Nulo si el
+          municipio no es PDET. Valores: 'SIERRA NEVADA - PERIJÁ', 'CUENCA DEL CAGUÁN Y PIEDEMONTE
+          CAQUETEÑO', 'PUTUMAYO', 'URABÁ ANTIOQUEÑO', 'ALTO PATÍA Y NORTE DEL CAUCA', 'BAJO CAUCA Y
+          NORDESTE ANTIOQUEÑO', 'PACÍFICO MEDIO', 'MACARENA - GUAVIARE', 'PACÍFICO Y FRONTERA NARIÑENSE',
+          'ARAUCA', 'MONTES DE MARÍA', 'SUR DE BOLÍVAR', 'CHOCÓ', 'SUR DEL TOLIMA', 'CATATUMBO', 'SUR DE CÓRDOBA'.
+        synonyms: [subregion pdet, region pdet, subregion]
+        sample_values: ["SIERRA NEVADA - PERIJÁ", "URABÁ ANTIOQUEÑO", "CATATUMBO"]
+      - name: ZOMAC
+        expr: ZOMAC
+        data_type: VARCHAR
+        description: >-
+          Indica si el municipio de la empresa es ZOMAC (Zona Más Afectada por el Conflicto Armado, con
+          beneficios tributarios). Valores: 'Sí' (12% de empresas), 'No'.
+        synonyms: [zomac, zona mas afectada por el conflicto, municipio zomac]
+        sample_values: ["Sí", "No"]
+
+    facts:
+      # ---------- Empresa: financieros y empleo ----------
+      - name: ANOS_EMPRESA
+        expr: ANOS_EMPRESA
+        data_type: FLOAT
+        description: Años de existencia de la empresa desde la fecha de matrícula (decimal). Usar promedio, no suma.
+        synonyms: [años de la empresa, antiguedad en años, edad de la empresa]
+      - name: ACTIVOS
+        expr: ACTIVOS
+        data_type: FLOAT
+        description: Total de activos de la empresa en pesos colombianos (COP), último reporte disponible (RUES o Supersociedades).
+        synonyms: [activos, activos totales, total activos, patrimonio bruto]
+      - name: INGRESOS_OPERACIONALES
+        expr: INGRESOS_OPERACIONALES
+        data_type: FLOAT
+        description: Ingresos operacionales anuales de la empresa en pesos colombianos (COP), último reporte disponible. Equivale a ventas.
+        synonyms: [ingresos, ventas, ingresos operacionales, facturacion, ventas anuales]
+      - name: UTILIDAD
+        expr: UTILIDAD
+        data_type: FLOAT
+        description: Utilidad neta del último ejercicio en pesos colombianos (COP). Puede ser negativa (pérdida).
+        synonyms: [utilidad, utilidad neta, ganancias, resultado del ejercicio, perdidas]
+      - name: EMPLEADOS
+        expr: EMPLEADOS
+        data_type: FLOAT
+        description: Número total de empleados reportados por la empresa.
+        synonyms: [empleados, trabajadores, numero de empleados, personal, planta de personal, empleo]
+      - name: CANTIDAD_MUJERES_EMPLEADAS
+        expr: CANTIDAD_MUJERES_EMPLEADAS
+        data_type: FLOAT
+        description: Número de mujeres empleadas en la empresa.
+        synonyms: [mujeres empleadas, empleadas mujeres, empleo femenino]
+      - name: CANTIDAD_MUJERES_EN_CARGOS_DIRECTIVOS
+        expr: CANTIDAD_MUJERES_EN_CARGOS_DIRECTIVOS
+        data_type: FLOAT
+        description: Número de mujeres en cargos directivos de la empresa.
+        synonyms: [mujeres directivas, mujeres en cargos directivos, liderazgo femenino]
+      - name: CANTIDAD_ESTABLECIMIENTOS
+        expr: CANTIDAD_ESTABLECIMIENTOS
+        data_type: FLOAT
+        description: Número de establecimientos de comercio registrados por la empresa.
+        synonyms: [establecimientos, sedes, locales, puntos de venta, sucursales]
+
+      # ---------- Exportaciones por año (USD FOB) ----------
+      - name: EXPO_2021
+        expr: EXPO_2021
+        data_type: FLOAT
+        description: Valor exportado por la empresa en 2021 en dólares FOB (USD). 0 si no exportó.
+        synonyms: [exportaciones 2021, exportado 2021]
+      - name: EXPO_2022
+        expr: EXPO_2022
+        data_type: FLOAT
+        description: Valor exportado por la empresa en 2022 en dólares FOB (USD). 0 si no exportó.
+        synonyms: [exportaciones 2022, exportado 2022]
+      - name: EXPO_2023
+        expr: EXPO_2023
+        data_type: FLOAT
+        description: Valor exportado por la empresa en 2023 en dólares FOB (USD). 0 si no exportó.
+        synonyms: [exportaciones 2023, exportado 2023]
+      - name: EXPO_2024
+        expr: EXPO_2024
+        data_type: FLOAT
+        description: Valor exportado por la empresa en 2024 en dólares FOB (USD). 0 si no exportó.
+        synonyms: [exportaciones 2024, exportado 2024]
+      - name: EXPO_2025
+        expr: EXPO_2025
+        data_type: FLOAT
+        description: Valor exportado por la empresa en 2025 en dólares FOB (USD). 0 si no exportó.
+        synonyms: [exportaciones 2025, exportado 2025]
+      - name: EXPO_ENE_MAY_2025
+        expr: EXPO_ENE_MAY_2025
+        data_type: FLOAT
+        description: Valor exportado enero-mayo 2025 en dólares FOB (USD). Periodo comparable con EXPO_ENE_MAY_2026 para variación año corrido.
+        synonyms: [exportaciones enero mayo 2025, año corrido 2025]
+      - name: EXPO_ENE_MAY_2026
+        expr: EXPO_ENE_MAY_2026
+        data_type: FLOAT
+        description: Valor exportado enero-mayo 2026 en dólares FOB (USD), último periodo disponible. Comparar con EXPO_ENE_MAY_2025.
+        synonyms: [exportaciones enero mayo 2026, año corrido 2026, exportaciones 2026, ultimo periodo]
+
+      # ---------- CRM ProColombia por año ----------
+      - name: NUMERO_NEGOCIOS_2023
+        expr: NUMERO_NEGOCIOS_2023
+        data_type: FLOAT
+        description: Número de negocios reportados con ProColombia en 2023. Nulo si la empresa no fue atendida.
+      - name: NUMERO_NEGOCIOS_2024
+        expr: NUMERO_NEGOCIOS_2024
+        data_type: FLOAT
+        description: Número de negocios reportados con ProColombia en 2024. Nulo si la empresa no fue atendida.
+      - name: NUMERO_NEGOCIOS_2025
+        expr: NUMERO_NEGOCIOS_2025
+        data_type: FLOAT
+        description: Número de negocios reportados con ProColombia en 2025. Nulo si la empresa no fue atendida.
+      - name: NUMERO_NEGOCIOS_ENE_JUN_2026
+        expr: NUMERO_NEGOCIOS_ENE_JUN_2026
+        data_type: FLOAT
+        description: Número de negocios reportados con ProColombia enero-junio 2026. Nulo si la empresa no fue atendida.
+      - name: NUMERO_SERVICIOS_2023
+        expr: NUMERO_SERVICIOS_2023
+        data_type: FLOAT
+        description: Número de servicios recibidos de ProColombia en 2023. Nulo si la empresa no fue atendida.
+      - name: NUMERO_SERVICIOS_2024
+        expr: NUMERO_SERVICIOS_2024
+        data_type: FLOAT
+        description: Número de servicios recibidos de ProColombia en 2024. Nulo si la empresa no fue atendida.
+      - name: NUMERO_SERVICIOS_2025
+        expr: NUMERO_SERVICIOS_2025
+        data_type: FLOAT
+        description: Número de servicios recibidos de ProColombia en 2025. Nulo si la empresa no fue atendida.
+      - name: NUMERO_SERVICIOS_ENE_JUN_2026
+        expr: NUMERO_SERVICIOS_ENE_JUN_2026
+        data_type: FLOAT
+        description: Número de servicios recibidos de ProColombia enero-junio 2026. Nulo si la empresa no fue atendida.
+      - name: NUMERO_OPORTUNIDADES_2023
+        expr: NUMERO_OPORTUNIDADES_2023
+        data_type: FLOAT
+        description: Número de oportunidades comerciales compartidas por ProColombia en 2023. Nulo si no fue atendida.
+      - name: NUMERO_OPORTUNIDADES_2024
+        expr: NUMERO_OPORTUNIDADES_2024
+        data_type: FLOAT
+        description: Número de oportunidades comerciales compartidas por ProColombia en 2024. Nulo si no fue atendida.
+      - name: NUMERO_OPORTUNIDADES_2025
+        expr: NUMERO_OPORTUNIDADES_2025
+        data_type: FLOAT
+        description: Número de oportunidades comerciales compartidas por ProColombia en 2025. Nulo si no fue atendida.
+      - name: NUMERO_OPORTUNIDADES_ENE_JUN_2026
+        expr: NUMERO_OPORTUNIDADES_ENE_JUN_2026
+        data_type: FLOAT
+        description: Número de oportunidades comerciales compartidas por ProColombia enero-junio 2026. Nulo si no fue atendida.
+
+      # ---------- Indicadores del municipio (atributos, NO sumar) ----------
+      - name: POBLACION_MUNICIPIO
+        expr: POBLACION_MUNICIPIO
+        data_type: FLOAT
+        description: >-
+          Población total del municipio donde está la empresa (habitantes, DANE). Es un atributo del
+          municipio repetido en cada empresa: NO sumar entre empresas; usar MAX o promedio por municipio.
+        synonyms: [poblacion, habitantes del municipio, poblacion municipal]
+      - name: VALOR_AGREGADO_MUNICIPIO
+        expr: VALOR_AGREGADO_MUNICIPIO
+        data_type: FLOAT
+        description: >-
+          Valor agregado (PIB municipal) del municipio en miles de millones de COP (DANE). Atributo del
+          municipio: NO sumar entre empresas; usar MAX por municipio.
+        synonyms: [pib municipal, valor agregado municipal, economia del municipio]
+      - name: PCT_ACT_PRIMARIAS_MUNICIPIO
+        expr: _ACT_PRIMARIAS_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) del valor agregado del municipio proveniente de actividades primarias (agro, minería). Atributo del municipio; usar promedio.
+        synonyms: [actividades primarias municipio, participacion sector primario, porcentaje agro municipio]
+      - name: PCT_ACT_SECUNDARIAS_MUNICIPIO
+        expr: _ACT_SECUNDARIAS_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) del valor agregado del municipio proveniente de actividades secundarias (industria, construcción). Atributo del municipio; usar promedio.
+        synonyms: [actividades secundarias municipio, participacion industria municipio]
+      - name: PCT_ACT_TERCIARIAS_MUNICIPIO
+        expr: _ACT_TERCIARIAS_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) del valor agregado del municipio proveniente de actividades terciarias (servicios, comercio). Atributo del municipio; usar promedio.
+        synonyms: [actividades terciarias municipio, participacion servicios municipio]
+      - name: PCT_GRUPOS_ETNICOS_MUNICIPIO
+        expr: _GRUPOS_ETNICOS_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de población del municipio que pertenece a grupos étnicos (indígena, afro, raizal, rom). Atributo del municipio; usar promedio.
+        synonyms: [poblacion etnica, grupos etnicos, poblacion indigena afro]
+      - name: PCT_INFORMALIDAD_MUNICIPIO
+        expr: _INFORMALIDAD_MUNICIPIO
+        data_type: FLOAT
+        description: Tasa de informalidad laboral del municipio, porcentaje (0-100). Atributo del municipio; usar promedio.
+        synonyms: [informalidad, tasa de informalidad, empleo informal municipio]
+      - name: PCT_JOVENES_MUNICIPIO
+        expr: _JOVENES_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de población joven en el municipio. Atributo del municipio; usar promedio.
+        synonyms: [jovenes, poblacion joven, porcentaje jovenes]
+      - name: PCT_MUJERES_MUNICIPIO
+        expr: _MUJERES_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de mujeres en la población del municipio. Atributo del municipio; usar promedio. No confundir con CANTIDAD_MUJERES_EMPLEADAS (dato de la empresa).
+        synonyms: [porcentaje mujeres municipio, poblacion femenina municipio]
+      - name: PCT_POBL_CON_DISCAPACIDAD_MUNICIPIO
+        expr: _POBL_CON_DISCAPACIDAD_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de población con discapacidad en el municipio. Atributo del municipio; usar promedio.
+        synonyms: [discapacidad, poblacion con discapacidad]
+      - name: PCT_POBL_CON_EDU_TECNICA_TECNOLOGICA_MUNICIPIO
+        expr: _POBL_CON_EDU_TECNICATECNOLOGIA_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de población del municipio con educación técnica o tecnológica. Atributo del municipio; usar promedio.
+        synonyms: [educacion tecnica, educacion tecnologica, tecnicos y tecnologos]
+      - name: PCT_POBL_CON_EDUCACION_MEDIA_MUNICIPIO
+        expr: _POBL_CON_EDUCACION_MEDIA_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de población del municipio con educación media (bachillerato). Atributo del municipio; usar promedio.
+        synonyms: [educacion media, bachillerato, secundaria]
+      - name: PCT_POBL_CON_POSGRADO_MUNICIPIO
+        expr: _POBL_CON_POSGRADO_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de población del municipio con posgrado. Atributo del municipio; usar promedio.
+        synonyms: [posgrado, maestria, doctorado, especializacion]
+      - name: PCT_POBL_CON_PREGRADO_MUNICIPIO
+        expr: _POBL_CON_PREGRADO_MUNICIPIO
+        data_type: FLOAT
+        description: Porcentaje (0-100) de población del municipio con pregrado universitario. Atributo del municipio; usar promedio.
+        synonyms: [pregrado, universitarios, educacion superior, profesionales]
+      - name: PCT_POBREZA_MUNICIPIO
+        expr: _POBREZA_MUNICIPIO
+        data_type: FLOAT
+        description: Incidencia de pobreza del municipio, porcentaje (0-100). Atributo del municipio; usar promedio.
+        synonyms: [pobreza, tasa de pobreza, indice de pobreza, pobreza municipal]
+
+    metrics:
+      - name: NUMERO_EMPRESAS
+        expr: COUNT(DISTINCT NIT)
+        description: Número de empresas únicas (NIT distintos). Métrica por defecto para 'cuántas empresas'.
+        synonyms: [cantidad de empresas, numero de empresas, total empresas, conteo de empresas, cuantas empresas]
+      - name: NUMERO_EXPORTADORAS
+        expr: COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN NIT END)
+        description: Número de empresas que exportaron bienes en los últimos 5 años.
+        synonyms: [empresas exportadoras, cantidad de exportadoras, numero de exportadoras, cuantas exportan]
+      - name: NUMERO_ATENDIDAS_PC
+        expr: COUNT(DISTINCT CASE WHEN ATENDIDA_PC = 'Sí' THEN NIT END)
+        description: Número de empresas atendidas por ProColombia.
+        synonyms: [empresas atendidas, cantidad atendidas por procolombia]
+      - name: PCT_EXPORTADORAS
+        expr: 100 * COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN NIT END) / NULLIF(COUNT(DISTINCT NIT), 0)
+        description: Porcentaje (0-100) de empresas del grupo que han exportado en los últimos 5 años.
+        synonyms: [porcentaje exportadoras, tasa de exportadoras, proporcion de exportadoras]
+      - name: PCT_ATENDIDAS_PC
+        expr: 100 * COUNT(DISTINCT CASE WHEN ATENDIDA_PC = 'Sí' THEN NIT END) / NULLIF(COUNT(DISTINCT NIT), 0)
+        description: Porcentaje (0-100) de empresas del grupo atendidas por ProColombia.
+        synonyms: [porcentaje atendidas, cobertura procolombia]
+      - name: TOTAL_EXPO_2021
+        expr: SUM(EXPO_2021)
+        description: Total exportado en 2021 en USD FOB.
+        synonyms: [exportaciones totales 2021]
+      - name: TOTAL_EXPO_2022
+        expr: SUM(EXPO_2022)
+        description: Total exportado en 2022 en USD FOB.
+        synonyms: [exportaciones totales 2022]
+      - name: TOTAL_EXPO_2023
+        expr: SUM(EXPO_2023)
+        description: Total exportado en 2023 en USD FOB.
+        synonyms: [exportaciones totales 2023]
+      - name: TOTAL_EXPO_2024
+        expr: SUM(EXPO_2024)
+        description: Total exportado en 2024 en USD FOB. Último año completo.
+        synonyms: [exportaciones totales 2024, exportaciones ultimo año completo]
+      - name: TOTAL_EXPO_2025
+        expr: SUM(EXPO_2025)
+        description: Total exportado en 2025 en USD FOB.
+        synonyms: [exportaciones totales 2025]
+      - name: TOTAL_EXPO_ENE_MAY_2025
+        expr: SUM(EXPO_ENE_MAY_2025)
+        description: Total exportado enero-mayo 2025 en USD FOB (base de comparación año corrido).
+      - name: TOTAL_EXPO_ENE_MAY_2026
+        expr: SUM(EXPO_ENE_MAY_2026)
+        description: Total exportado enero-mayo 2026 en USD FOB (último periodo disponible).
+        synonyms: [exportaciones año corrido 2026, exportaciones 2026]
+      - name: TOTAL_EXPO_5_ANOS
+        expr: SUM(EXPO_2021 + EXPO_2022 + EXPO_2023 + EXPO_2024 + EXPO_2025)
+        description: Total acumulado exportado 2021-2025 en USD FOB (cinco años completos).
+        synonyms: [exportaciones acumuladas, total exportado ultimos 5 años, exportaciones historicas]
+      - name: VARIACION_EXPO_2024_2023_PCT
+        expr: 100 * (SUM(EXPO_2024) - SUM(EXPO_2023)) / NULLIF(SUM(EXPO_2023), 0)
+        description: Variación porcentual de las exportaciones 2024 frente a 2023.
+        synonyms: [crecimiento exportaciones 2024, variacion 2024 vs 2023]
+      - name: VARIACION_EXPO_2025_2024_PCT
+        expr: 100 * (SUM(EXPO_2025) - SUM(EXPO_2024)) / NULLIF(SUM(EXPO_2024), 0)
+        description: Variación porcentual de las exportaciones 2025 frente a 2024.
+        synonyms: [crecimiento exportaciones 2025, variacion 2025 vs 2024]
+      - name: VARIACION_EXPO_ANO_CORRIDO_PCT
+        expr: 100 * (SUM(EXPO_ENE_MAY_2026) - SUM(EXPO_ENE_MAY_2025)) / NULLIF(SUM(EXPO_ENE_MAY_2025), 0)
+        description: Variación porcentual año corrido enero-mayo 2026 frente a enero-mayo 2025.
+        synonyms: [variacion año corrido, crecimiento 2026, variacion enero mayo]
+      - name: TOTAL_EMPLEADOS
+        expr: SUM(EMPLEADOS)
+        description: Total de empleados sumando todas las empresas del grupo.
+        synonyms: [empleo total, total trabajadores, suma de empleados]
+      - name: PROMEDIO_EMPLEADOS
+        expr: AVG(EMPLEADOS)
+        description: Promedio de empleados por empresa.
+        synonyms: [empleados promedio, tamaño promedio de planta]
+      - name: TOTAL_MUJERES_EMPLEADAS
+        expr: SUM(CANTIDAD_MUJERES_EMPLEADAS)
+        description: Total de mujeres empleadas sumando todas las empresas del grupo.
+      - name: PCT_MUJERES_EMPLEADAS
+        expr: 100 * SUM(CANTIDAD_MUJERES_EMPLEADAS) / NULLIF(SUM(EMPLEADOS), 0)
+        description: Porcentaje (0-100) de mujeres sobre el total de empleados de las empresas del grupo.
+        synonyms: [participacion femenina en el empleo, porcentaje de mujeres empleadas, equidad de genero empleo]
+      - name: TOTAL_INGRESOS_OPERACIONALES
+        expr: SUM(INGRESOS_OPERACIONALES)
+        description: Suma de ingresos operacionales en COP de las empresas del grupo.
+        synonyms: [ingresos totales, ventas totales, facturacion total]
+      - name: PROMEDIO_INGRESOS_OPERACIONALES
+        expr: AVG(INGRESOS_OPERACIONALES)
+        description: Ingresos operacionales promedio por empresa en COP.
+        synonyms: [ingresos promedio, ventas promedio]
+      - name: TOTAL_ACTIVOS
+        expr: SUM(ACTIVOS)
+        description: Suma de activos en COP de las empresas del grupo.
+        synonyms: [activos totales del grupo]
+      - name: TOTAL_UTILIDAD
+        expr: SUM(UTILIDAD)
+        description: Suma de utilidad neta en COP de las empresas del grupo.
+      - name: PROMEDIO_ANOS_EMPRESA
+        expr: AVG(ANOS_EMPRESA)
+        description: Antigüedad promedio de las empresas en años.
+        synonyms: [antiguedad promedio, edad promedio de las empresas]
+      - name: TOTAL_NEGOCIOS_2024
+        expr: SUM(NUMERO_NEGOCIOS_2024)
+        description: Total de negocios reportados con ProColombia en 2024.
+      - name: TOTAL_NEGOCIOS_2025
+        expr: SUM(NUMERO_NEGOCIOS_2025)
+        description: Total de negocios reportados con ProColombia en 2025.
+      - name: TOTAL_SERVICIOS_2024
+        expr: SUM(NUMERO_SERVICIOS_2024)
+        description: Total de servicios prestados por ProColombia en 2024.
+      - name: TOTAL_SERVICIOS_2025
+        expr: SUM(NUMERO_SERVICIOS_2025)
+        description: Total de servicios prestados por ProColombia en 2025.
+      - name: TOTAL_OPORTUNIDADES_2024
+        expr: SUM(NUMERO_OPORTUNIDADES_2024)
+        description: Total de oportunidades compartidas por ProColombia en 2024.
+      - name: TOTAL_OPORTUNIDADES_2025
+        expr: SUM(NUMERO_OPORTUNIDADES_2025)
+        description: Total de oportunidades compartidas por ProColombia en 2025.
+      - name: PROMEDIO_POBREZA_MUNICIPIO
+        expr: AVG(_POBREZA_MUNICIPIO)
+        description: Promedio de la incidencia de pobreza (0-100) de los municipios de las empresas del grupo, ponderado por número de empresas.
+      - name: PROMEDIO_INFORMALIDAD_MUNICIPIO
+        expr: AVG(_INFORMALIDAD_MUNICIPIO)
+        description: Promedio de la tasa de informalidad (0-100) de los municipios de las empresas del grupo.
+      - name: NUMERO_MUNICIPIOS
+        expr: COUNT(DISTINCT COD_MUNICIPIO_EMP)
+        description: Número de municipios distintos con presencia de empresas del grupo.
+        synonyms: [cantidad de municipios, municipios con empresas]
+      - name: NUMERO_PAISES_DESTINO
+        expr: COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN PAIS_DESTINO END)
+        description: Número de países destino principales distintos entre las exportadoras del grupo.
+        synonyms: [cantidad de mercados, numero de paises destino, diversificacion de mercados]
+
+    filters:
+      - name: EXPORTADORAS
+        expr: HA_EXPORTADO = 'Sí'
+        description: Empresas que exportaron bienes en los últimos 5 años. Aplicar siempre que la pregunta sea sobre exportadoras, países destino, productos exportados, sectores o hubs.
+        synonyms: [solo exportadoras, empresas que exportan, que han exportado]
+      - name: NO_EXPORTADORAS
+        expr: HA_EXPORTADO = 'No'
+        description: Empresas sin exportaciones en los últimos 5 años (potenciales o futuros exportadores).
+        synonyms: [no exportadoras, futuros exportadores, potenciales exportadoras, que no exportan]
+      - name: ATENDIDAS_PROCOLOMBIA
+        expr: ATENDIDA_PC = 'Sí'
+        description: Empresas atendidas por ProColombia (con negocios, servicios u oportunidades en el CRM).
+        synonyms: [atendidas, clientes procolombia]
+      - name: NO_ATENDIDAS_PROCOLOMBIA
+        expr: ATENDIDA_PC = 'No'
+        description: Empresas que nunca han sido atendidas por ProColombia; útil para identificar prospectos.
+        synonyms: [no atendidas, sin atencion procolombia, prospectos]
+      - name: EXPORTADORAS_NO_ATENDIDAS
+        expr: HA_EXPORTADO = 'Sí' AND ATENDIDA_PC = 'No'
+        description: Exportadoras que no han sido atendidas por ProColombia (brecha de cobertura).
+        synonyms: [exportadoras sin atender, brecha de atencion]
+      - name: PYMES
+        expr: TAMANO IN ('Pequeña', 'Mediana')
+        description: Empresas pequeñas y medianas (Pyme).
+        synonyms: [pyme, pymes, pequeñas y medianas]
+      - name: MIPYMES
+        expr: TAMANO IN ('Micro', 'Pequeña', 'Mediana')
+        description: Micro, pequeñas y medianas empresas (MiPyme); excluye grandes.
+        synonyms: [mipyme, mipymes]
+      - name: GRANDES
+        expr: TAMANO = 'Grande'
+        description: Empresas grandes.
+      - name: PERSONAS_JURIDICAS
+        expr: CATEGORIA_MATRICULA = 'SOCIEDAD o PERSONA JURIDICA PRINCIPAL'
+        description: Sociedades y personas jurídicas; excluye personas naturales comerciantes.
+        synonyms: [sociedades, personas juridicas, solo empresas constituidas]
+      - name: CON_INVERSION_EXTRANJERA
+        expr: INVERSION_EXTRANJERA = 'Sí'
+        description: Empresas con participación de capital extranjero.
+      - name: CADENA_PROCOLOMBIA
+        expr: CADENA_SEGMENTACION <> 'CIIU no aplica categoría ProColombia'
+        description: Empresas cuya actividad económica pertenece a alguna cadena productiva promovida por ProColombia.
+        synonyms: [actividad en cadenas procolombia, con cadena asignada]
+      - name: MUNICIPIOS_PDET
+        expr: PDET = 'Sí'
+        description: Empresas ubicadas en municipios PDET.
+      - name: MUNICIPIOS_ZOMAC
+        expr: ZOMAC = 'Sí'
+        description: Empresas ubicadas en municipios ZOMAC.
+      - name: MUNICIPIOS_PEQUENOS
+        expr: MENOR_200K_HABITANTES = 'Sí'
+        description: Empresas ubicadas en municipios de menos de 200.000 habitantes.
+        synonyms: [fuera de grandes ciudades, municipios intermedios y pequeños]
+      - name: EXPORTADORAS_NME
+        expr: EXPORTADORA_NME_ACTIVIDAD = 'Sí'
+        description: Exportadoras no minero-energéticas con actividad relevante para ProColombia.
+      - name: CON_EMPLEADOS
+        expr: EMPLEADOS > 0
+        description: Empresas que reportan al menos un empleado; útil para promedios de empleo y porcentaje de mujeres.
+
+verified_queries:
+  - name: empresas_por_tamano
+    question: ¿Cuántas empresas hay por tamaño?
+    sql: |
+      SELECT TAMANO, COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS
+      FROM EMPRESAS
+      GROUP BY TAMANO
+      ORDER BY NUMERO_EMPRESAS DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+    use_as_onboarding_question: true
+
+  - name: exportadoras_por_departamento
+    question: ¿Cuántas empresas exportadoras hay por departamento y cuánto exportaron en 2024?
+    sql: |
+      SELECT DEPARTAMENTO_EMP, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2024) AS TOTAL_EXPO_2024_USD
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí'
+      GROUP BY DEPARTAMENTO_EMP
+      ORDER BY TOTAL_EXPO_2024_USD DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+    use_as_onboarding_question: true
+
+  - name: top_paises_destino
+    question: ¿Cuáles son los 10 principales países destino de las exportadoras y cuántas empresas exportan a cada uno?
+    sql: |
+      SELECT PAIS_DESTINO, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2024) AS TOTAL_EXPO_2024_USD
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí'
+      GROUP BY PAIS_DESTINO
+      ORDER BY NUMERO_EXPORTADORAS DESC
+      LIMIT 10
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+    use_as_onboarding_question: true
+
+  - name: pymes_agroalimentos_no_atendidas
+    question: ¿Qué pymes de la cadena Agroalimentos en Antioquia han exportado pero no han sido atendidas por ProColombia?
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, MUNICIPIO_EMP, TAMANO, SECTOR, PAIS_DESTINO, EXPO_2024, EXPO_2025, EMAIL, TELEFONO
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí'
+        AND ATENDIDA_PC = 'No'
+        AND TAMANO IN ('Pequeña', 'Mediana')
+        AND CADENA_SEGMENTACION = 'Agroalimentos'
+        AND DEPARTAMENTO_EMP = 'Antioquia'
+      ORDER BY EXPO_2024 DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: variacion_ano_corrido_por_cadena
+    question: ¿Cómo variaron las exportaciones enero-mayo 2026 frente a enero-mayo 2025 por cadena productiva exportada?
+    sql: |
+      SELECT CADENA,
+             SUM(EXPO_ENE_MAY_2025) AS EXPO_ENE_MAY_2025_USD,
+             SUM(EXPO_ENE_MAY_2026) AS EXPO_ENE_MAY_2026_USD,
+             100 * (SUM(EXPO_ENE_MAY_2026) - SUM(EXPO_ENE_MAY_2025)) / NULLIF(SUM(EXPO_ENE_MAY_2025), 0) AS VARIACION_PCT
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí'
+      GROUP BY CADENA
+      ORDER BY EXPO_ENE_MAY_2026_USD DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: potenciales_exportadores_sistema_moda
+    question: ¿Cuáles son las empresas medianas y grandes de Sistema Moda que no han exportado, ordenadas por ingresos?
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, DEPARTAMENTO_EMP, MUNICIPIO_EMP, TAMANO, DESCRIPCION_CIIU_1, INGRESOS_OPERACIONALES, EMPLEADOS, ATENDIDA_PC
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'No'
+        AND CADENA_SEGMENTACION = 'Sistema Moda'
+        AND TAMANO IN ('Mediana', 'Grande')
+      ORDER BY INGRESOS_OPERACIONALES DESC
+      LIMIT 50
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: empresas_pdet_por_subregion
+    question: ¿Cuántas empresas hay en municipios PDET por subregión y cuántas de ellas exportan?
+    sql: |
+      SELECT SUBREGION_PDET,
+             COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS,
+             COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN NIT END) AS NUMERO_EXPORTADORAS
+      FROM EMPRESAS
+      WHERE PDET = 'Sí'
+      GROUP BY SUBREGION_PDET
+      ORDER BY NUMERO_EMPRESAS DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: participacion_mujeres_por_tamano
+    question: ¿Cuál es el porcentaje de mujeres empleadas por tamaño de empresa?
+    sql: |
+      SELECT TAMANO,
+             SUM(EMPLEADOS) AS TOTAL_EMPLEADOS,
+             SUM(CANTIDAD_MUJERES_EMPLEADAS) AS TOTAL_MUJERES,
+             100 * SUM(CANTIDAD_MUJERES_EMPLEADAS) / NULLIF(SUM(EMPLEADOS), 0) AS PCT_MUJERES
+      FROM EMPRESAS
+      WHERE EMPLEADOS > 0
+      GROUP BY TAMANO
+      ORDER BY TOTAL_EMPLEADOS DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: top_exportadoras_cafe
+    question: ¿Cuáles son las 20 empresas que más exportaron café en 2024?
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, DEPARTAMENTO_EMP, TAMANO, PAIS_DESTINO, TRAYECTORIA_EXPORTADORA, EXPO_2024
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí' AND SECTOR = 'Café'
+      ORDER BY EXPO_2024 DESC
+      LIMIT 20
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: trayectoria_por_hub
+    question: ¿Cuántas exportadoras hay por trayectoria exportadora y hub de destino?
+    sql: |
+      SELECT TRAYECTORIA_EXPORTADORA, HUB, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2024) AS TOTAL_EXPO_2024_USD
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí'
+      GROUP BY TRAYECTORIA_EXPORTADORA, HUB
+      ORDER BY TRAYECTORIA_EXPORTADORA, NUMERO_EXPORTADORAS DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: municipios_pequenos_cadenas
+    question: ¿Cuántas empresas de cadenas ProColombia hay en municipios de menos de 200 mil habitantes, por macrorregión?
+    sql: |
+      SELECT MACRORREGION_EMP, COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS, COUNT(DISTINCT COD_MUNICIPIO_EMP) AS NUMERO_MUNICIPIOS
+      FROM EMPRESAS
+      WHERE MENOR_200K_HABITANTES = 'Sí'
+        AND CADENA_SEGMENTACION <> 'CIIU no aplica categoría ProColombia'
+      GROUP BY MACRORREGION_EMP
+      ORDER BY NUMERO_EMPRESAS DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: ficha_empresa_por_nit
+    question: Muéstrame la ficha completa de la empresa con NIT 830068604
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, TAMANO, ORGANIZACION_JURIDICA, DEPARTAMENTO_EMP, MUNICIPIO_EMP,
+             COD_CIIU_1, DESCRIPCION_CIIU_1, CADENA_SEGMENTACION, ANOS_EMPRESA, INVERSION_EXTRANJERA,
+             ACTIVOS, INGRESOS_OPERACIONALES, UTILIDAD, EMPLEADOS, CANTIDAD_MUJERES_EMPLEADAS,
+             HA_EXPORTADO, TRAYECTORIA_EXPORTADORA, SECTOR, SUBSECTOR, DESC_POSICION_ARANCELARIA, PAIS_DESTINO, HUB,
+             EXPO_2021, EXPO_2022, EXPO_2023, EXPO_2024, EXPO_2025, EXPO_ENE_MAY_2026,
+             ATENDIDA_PC, NUMERO_NEGOCIOS_2025, NUMERO_SERVICIOS_2025, NUMERO_OPORTUNIDADES_2025,
+             REPRESENTANTE_LEGAL, EMAIL, TELEFONO, PDET, ZOMAC
+      FROM EMPRESAS
+      WHERE NIT = '830068604'
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+  - name: servicios_procolombia_por_cadena_2025
+    question: ¿Cuántos servicios, negocios y oportunidades entregó ProColombia en 2025 por cadena de segmentación?
+    sql: |
+      SELECT CADENA_SEGMENTACION,
+             COUNT(DISTINCT NIT) AS EMPRESAS_ATENDIDAS,
+             SUM(NUMERO_SERVICIOS_2025) AS TOTAL_SERVICIOS_2025,
+             SUM(NUMERO_NEGOCIOS_2025) AS TOTAL_NEGOCIOS_2025,
+             SUM(NUMERO_OPORTUNIDADES_2025) AS TOTAL_OPORTUNIDADES_2025
+      FROM EMPRESAS
+      WHERE ATENDIDA_PC = 'Sí'
+      GROUP BY CADENA_SEGMENTACION
+      ORDER BY EMPRESAS_ATENDIDAS DESC
+    verified_by: Modelo semántico inicial
+    verified_at: 1756857600
+
+custom_instructions: >-
+  Responde siempre en español. La tabla tiene una fila por empresa: para contar empresas usa
+  COUNT(DISTINCT NIT). Cuando la pregunta trate sobre exportadoras, países destino, productos
+  exportados, sectores, subsectores, hubs, posiciones arancelarias o trayectoria, filtra siempre con
+  HA_EXPORTADO = 'Sí' para excluir el valor 'No exportó ult. 5 años'. Excluye también los valores
+  'No determinado' de las agrupaciones salvo que se pidan explícitamente. Para ubicación de la empresa
+  usa DEPARTAMENTO_EMP y MUNICIPIO_EMP (no DEPARTAMENTO_EXPO ni las columnas *_BASE_MUNICIPIOS).
+  Para cadena productiva usa CADENA_SEGMENTACION salvo que se pregunte por la cadena del producto
+  exportado (CADENA). Las cifras EXPO_* están en dólares FOB (USD); ACTIVOS, INGRESOS_OPERACIONALES y
+  UTILIDAD en pesos colombianos (COP). Los indicadores municipales (POBLACION_MUNICIPIO,
+  VALOR_AGREGADO_MUNICIPIO y los PCT_*_MUNICIPIO) describen al municipio, no a la empresa: nunca los
+  sumes entre empresas; usa AVG o MAX. Las comparaciones año corrido deben usar EXPO_ENE_MAY_2026 vs
+  EXPO_ENE_MAY_2025. Cuando se pidan listados de empresas, incluye NIT, RAZON_SOCIAL, TAMANO,
+  DEPARTAMENTO_EMP, MUNICIPIO_EMP y limita a 100 filas salvo indicación contraria. Para búsquedas por
+  nombre, producto o actividad usa ILIKE con comodines. Interpreta 'Pyme' como TAMANO IN ('Pequeña','Mediana')
+  y 'MiPyme' como Micro+Pequeña+Mediana.
