@@ -197,6 +197,7 @@ class Orquestador:
 
             # 4 · Redacción dentro de Snowflake ----------------------------
             yield self._etapa(consulta_id, "redactando", "Redactando la respuesta…")
+            t_redaccion = time.monotonic()
             redaccion = redactar_texto(
                 self._servicio.filas_con_parametros,
                 pregunta,
@@ -206,6 +207,7 @@ class Orquestador:
                 truncado,
                 CORTEX_MODEL,
             )
+            ms_redaccion = int((time.monotonic() - t_redaccion) * 1000)
 
             # 5 · Ninguna cifra sin respaldo -------------------------------
             verificacion = verificar_cifras(redaccion.texto, filas, n_filas, pregunta)
@@ -232,6 +234,7 @@ class Orquestador:
                 sugerencias=respuesta.sugerencias,
                 ms_analyst=ms_analyst,
                 ms_sql=ms_sql,
+                ms_redaccion=ms_redaccion,
                 modelo=redaccion.modelo,
                 degradado=redaccion.degradado,
                 cifras_ok=verificacion.ok,
@@ -273,6 +276,7 @@ class Orquestador:
             "cifras_verificadas": datos.pop("cifras_ok", True),
             "ms_interpretacion": datos.pop("ms_analyst", 0),
             "ms_consulta": datos.pop("ms_sql", 0),
+            "ms_redaccion": datos.pop("ms_redaccion", 0),
             "ms_total": int((time.monotonic() - inicio) * 1000),
             "version": APP_VERSION,
             "vista_semantica": self._cliente.vista_semantica,

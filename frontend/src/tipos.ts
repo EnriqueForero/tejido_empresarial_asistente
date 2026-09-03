@@ -156,6 +156,7 @@ export type MetaIA = {
   cifras_verificadas: boolean;
   ms_interpretacion: number;
   ms_consulta: number;
+  ms_redaccion: number;
   ms_total: number;
   version: string;
   vista_semantica: string;

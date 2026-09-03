@@ -24,7 +24,7 @@ def _int_env(nombre: str, por_defecto: int) -> int:
     except (TypeError, ValueError):
         return por_defecto
 
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.4.1"
 APP_TITLE = "Tejido Empresarial · ProColombia"
 
 # ==============================================================================

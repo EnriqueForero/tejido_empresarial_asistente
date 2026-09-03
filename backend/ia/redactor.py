@@ -20,6 +20,10 @@ logger = logging.getLogger("tejido.ia")
 
 _MAX_FILAS_PROMPT = 30
 _MAX_ANCHO_CELDA = 80
+#: Tope de caracteres de la tabla que viaja al modelo. El tiempo de redacción
+#: crece con el tamaño del texto de entrada: un listado de 30 empresas con 20
+#: columnas ocupa unos 35.000 caracteres y no se resume mejor por ser más largo.
+_MAX_CARACTERES_TABLA = 6000
 
 
 @dataclass
@@ -39,13 +43,25 @@ def _celda(valor: Any) -> str:
 
 
 def tabla_markdown(columnas: list[str], filas: list[list[Any]], n_filas: int) -> str:
-    """Las primeras filas del resultado, en el formato que mejor lee un modelo."""
-    visibles = filas[:_MAX_FILAS_PROMPT]
+    """Las primeras filas del resultado, acotadas por número y por tamaño.
+
+    Se recorta también por caracteres porque el tiempo de redacción depende del
+    largo del texto de entrada, y una tabla ancha puede ser cincuenta veces más
+    grande que una angosta con las mismas filas.
+    """
     cabecera = " | ".join(columnas)
     separador = " | ".join("---" for _ in columnas)
-    cuerpo = "\n".join(" | ".join(_celda(valor) for valor in fila) for fila in visibles)
-    resto = f"\n(… {n_filas - len(visibles)} filas más, no mostradas)" if n_filas > len(visibles) else ""
-    return f"{cabecera}\n{separador}\n{cuerpo}{resto}"
+    lineas: list[str] = []
+    usados = len(cabecera) + len(separador)
+    for fila in filas[:_MAX_FILAS_PROMPT]:
+        linea = " | ".join(_celda(valor) for valor in fila)
+        if lineas and usados + len(linea) > _MAX_CARACTERES_TABLA:
+            break
+        lineas.append(linea)
+        usados += len(linea) + 1
+    omitidas = n_filas - len(lineas)
+    resto = f"\n(… {omitidas} filas más, no mostradas)" if omitidas > 0 else ""
+    return f"{cabecera}\n{separador}\n" + "\n".join(lineas) + resto
 
 
 def construir_prompt(pregunta: str, columnas: list[str], filas: list[list[Any]], n_filas: int) -> str:

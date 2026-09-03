@@ -116,3 +116,59 @@ al warehouse. El consumo se revisa en Snowflake con
 `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_ANALYST_USAGE_HISTORY` y en el historial de
 consultas del warehouse. Conviene mirarlo la primera semana para dimensionar el
 uso real.
+
+---
+
+## 8 · Elegir el modelo de redacción y entender los tiempos
+
+### Qué hace realmente el modelo
+
+Casi nada de lo que usted ve. El reparto del trabajo es:
+
+| Etapa | Quién la hace | ¿Se configura? |
+|---|---|---|
+| Traducir la pregunta a SQL | **Cortex Analyst**, con sus propios modelos | No |
+| Revisar y ejecutar la consulta | Este aplicativo | No |
+| Verificar que cada cifra exista en la tabla | Este aplicativo | No |
+| Escribir las 2 a 5 frases del resumen | El modelo de `SF_CORTEX_MODEL` | **Sí** |
+
+Es decir: **cambiar el modelo no cambia la exactitud de las cifras.** Esa la
+garantiza el código, no el modelo. Lo que sí cambia es cuánto tarda en escribir
+el resumen y cuánto cuesta.
+
+Por eso, para esta tarea —corta, acotada y verificada— un modelo intermedio
+suele ser mejor negocio que uno grande: responde antes y gasta menos, sin
+pérdida apreciable de calidad.
+
+### Cómo elegirlo con datos
+
+No adopte una recomendación de memoria: la disponibilidad de modelos cambia por
+región y con el tiempo. Ejecute
+[`snowflake/02_comparar_modelos.sql`](snowflake/02_comparar_modelos.sql): mide en
+su propia cuenta el tiempo de cada candidato con el prompt real del aplicativo y
+consulta los créditos que efectivamente consumió.
+
+Cuando decida, en Railway: `SF_CORTEX_MODEL = <el modelo elegido>`.
+
+### De dónde salen los segundos
+
+Debajo de cada respuesta, el asistente muestra el desglose:
+
+```
+Interpretar la pregunta 6,2 s · consultar la base 4,1 s · redactar 21,7 s (claude-3-5-sonnet)
+```
+
+Con eso se sabe siempre dónde se fue el tiempo. Las causas habituales, en orden
+de frecuencia:
+
+| Si lo grande es… | Suele ser porque… | Qué hacer |
+|---|---|---|
+| **Redactar** | El modelo es grande, o la tabla que se le envía es ancha. | Cambie `SF_CORTEX_MODEL` por uno más rápido. El aplicativo ya recorta la tabla del prompt a 6.000 caracteres. |
+| **Consultar la base** | El warehouse estaba suspendido y tuvo que encenderse (5 a 10 s), o es la primera consulta tras un redespliegue y hubo que abrir la sesión con Snowflake (3 a 5 s). | Nada en el aplicativo. Si molesta, suba `AUTO_SUSPEND` del warehouse; cuesta créditos de inactividad. |
+| **Interpretar la pregunta** | Cortex Analyst tarda más con preguntas ambiguas o con historial largo. | Preguntas más concretas. El historial ya está limitado a los últimos turnos. |
+| **Todo a la vez, sólo la primera vez** | Arranque en frío: sesión nueva + warehouse dormido + primera llamada a Cortex. | La segunda pregunta es notablemente más rápida. Es normal. |
+
+Una consulta de 50 segundos casi siempre es la **primera** del día o la primera
+después de un redespliegue, con el warehouse dormido y un modelo grande
+redactando. Repita la misma pregunta y compare el desglose: la diferencia le dirá
+cuánto era arranque en frío y cuánto es el costo estable.

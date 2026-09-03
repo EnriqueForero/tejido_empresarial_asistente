@@ -369,3 +369,37 @@ def test_la_presentacion_se_genera_con_portada_tabla_y_trazabilidad(cliente: Tes
     assert DATOS_DESCARGA["pregunta"] in texto
     assert "inteligencia artificial" in texto
     assert "SELECT DEPARTAMENTO_EMP" in texto
+
+
+# ── Tamaño del texto que se le envía al modelo ───────────────────────────
+
+
+def test_la_tabla_del_prompt_se_acota_por_tamano_no_solo_por_filas() -> None:
+    """Una tabla ancha no puede inflar el prompt: el tiempo de redacción crece con él."""
+    from backend.ia.redactor import _MAX_CARACTERES_TABLA, tabla_markdown
+
+    columnas = [f"COLUMNA_{i}" for i in range(20)]
+    anchas = [[f"valor {fila}-{col} con texto largo de relleno" for col in range(20)] for fila in range(30)]
+    texto = tabla_markdown(columnas, anchas, 30)
+
+    assert len(texto) <= _MAX_CARACTERES_TABLA + len(" | ".join(columnas)) * 2 + 200
+    assert "filas más, no mostradas" in texto  # declara lo que omitió
+
+
+def test_una_tabla_angosta_no_pierde_filas() -> None:
+    from backend.ia.redactor import _MAX_FILAS_PROMPT, tabla_markdown
+
+    filas = [["Bogotá, D.C.", 402118] for _ in range(30)]
+    texto = tabla_markdown(["Departamento", "Empresas"], filas, 30)
+    assert len(texto.splitlines()) == _MAX_FILAS_PROMPT + 2  # cabecera + separador
+    assert "filas más" not in texto
+
+
+def test_la_respuesta_informa_el_tiempo_de_cada_etapa() -> None:
+    """Sin el desglose no se puede saber por qué una consulta tardó."""
+    eventos = _eventos(_ServicioFalso(), _AnalystFalso(sql=f"SELECT DEPARTAMENTO_EMP FROM {TABLA}"))
+    meta = eventos[-1]["meta"]
+    for clave in ("ms_interpretacion", "ms_consulta", "ms_redaccion", "ms_total"):
+        assert clave in meta, clave
+        assert isinstance(meta[clave], int)
+    assert meta["ms_total"] >= meta["ms_redaccion"]

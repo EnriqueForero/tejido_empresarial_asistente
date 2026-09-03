@@ -18,13 +18,16 @@ Para un aplicativo de este tipo: **PATCH** corrige textos, estilos o errores; **
 - **Gráficas propias en SVG**, sin librerías externas: barras de un solo tono para una medida, apiladas para cruces de dos dimensiones, agrupadas para varias medidas, líneas para series por año y cifra destacada para un solo número. La paleta está validada para daltonismo y contraste, y la tabla siempre acompaña a la gráfica.
 - **Carpeta `snowflake/`**: el modelo semántico, la especificación del agente y el script de permisos con sus consultas de verificación, versionados junto al código.
 - Variables nuevas: `SF_SEMANTIC_VIEW`, `SF_CORTEX_MODEL`, `SF_ALLOWED_SCHEMAS`, `SF_HOST`, `IA_MAX_ROWS`, `IA_MAX_ROWS_CLIENT`, `IA_ANALYST_TIMEOUT`. Todas tienen un valor por defecto correcto.
-- Pruebas: 32 nuevas sobre las guardas de SQL, la verificación de cifras, la elección de gráfica, el flujo del asistente, el contenido de las descargas y la coherencia de las listas de dependencias (72 en total).
+- **Desglose de tiempos en cada respuesta**: interpretar la pregunta, consultar la base y redactar, con el nombre del modelo que escribió el texto. Sin ese dato, «tardó 50 segundos» no se puede diagnosticar.
+- `snowflake/02_comparar_modelos.sql`: mide en la propia cuenta el tiempo de cada modelo candidato con el prompt real del asistente y consulta los créditos consumidos, para elegir `SF_CORTEX_MODEL` con datos y no de memoria.
+- Pruebas: 35 nuevas sobre las guardas de SQL, la verificación de cifras, la elección de gráfica, el flujo del asistente, el contenido de las descargas, el tamaño del prompt y la coherencia de las listas de dependencias (75 en total).
 - `requirements-test.txt` y `RAILWAY_VARIABLES.md`.
 
 ### Cambiado
 - La navegación principal y la portada incorporan el asistente; el resto del aplicativo no cambia.
 - **Una sola lista de dependencias para las pruebas.** El notebook de publicación y la integración continua instalan `requirements-test.txt` en lugar de una lista escrita a mano. Mantener dos listas ya había causado tres fallos de publicación —faltaron `cryptography`, `pyarrow` y `python-pptx`—; `tests/test_dependencias.py` ahora falla en el propio conjunto de pruebas si una dependencia de producción no está declarada allí, de modo que el error aparece donde está la causa y no en Colab.
 - El pre-flight del notebook vigila también los archivos del asistente y los artefactos de Snowflake.
+- **La tabla que se envía al modelo se acota por tamaño, no sólo por filas.** Un listado de 30 empresas con 20 columnas ocupaba 35.000 caracteres; ahora se recorta a 6.000 y se declara cuántas filas quedaron fuera. El tiempo de redacción crece con el largo de la entrada, así que esto es tiempo y créditos ahorrados en cada consulta ancha.
 
 ## [3.3.1] — 2026-09-02
 

@@ -98,7 +98,7 @@ Tras cualquier cambio: `cd frontend && npm run build` (o simplemente desplegar; 
 
 ## 7. Lista de verificación de entrega
 
-- [ ] `pytest -q` → 72 pruebas aprobadas.
+- [ ] `pytest -q` → 75 pruebas aprobadas.
 - [ ] `cd frontend && npm run build` sin errores.
 - [ ] `/estado` en Railway muestra «Datos reales».
 - [ ] `/asistente` responde la primera pregunta sugerida y descarga el Excel (ver [`ASISTENTE.md`](ASISTENTE.md)).

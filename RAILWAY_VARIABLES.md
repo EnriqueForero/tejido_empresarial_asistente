@@ -69,7 +69,7 @@ modelo semántico o el modelo de redacción.
 | Variable | Valor por defecto | Cuándo tocarla |
 |---|---|---|
 | `SF_SEMANTIC_VIEW` | `APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION.TEJIDO_EMPRESARIAL_SEGMENTACION` | Si despliega el modelo semántico con otro nombre. |
-| `SF_CORTEX_MODEL` | `claude-3-5-sonnet` | Los modelos de Cortex caducan con el tiempo; revise una vez al año. |
+| `SF_CORTEX_MODEL` | `claude-3-5-sonnet` | Sólo afecta a las 2-5 frases del resumen: la SQL la genera Cortex Analyst y las cifras las verifica el código. Para elegir uno más rápido y barato, mida con `snowflake/02_comparar_modelos.sql`. |
 | `SF_ALLOWED_SCHEMAS` | `APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION,APP_SEGMENTACION_EXPORTACIONES.PUBLIC` | Si el asistente debe poder leer otro esquema. |
 | `SF_HOST` | derivado de `SF_ACCOUNT` | Sólo si su cuenta usa un dominio distinto de `<SF_ACCOUNT>.snowflakecomputing.com`. |
 | `IA_MAX_ROWS` | `5000` | Tope de filas que trae una consulta del asistente. |

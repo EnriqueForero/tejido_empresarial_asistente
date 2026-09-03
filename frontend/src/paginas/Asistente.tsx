@@ -27,6 +27,9 @@ const ETAPAS: Record<string, string> = {
   redactando: 'Redactando la respuesta',
 };
 
+/** Milisegundos como segundos con un decimal, en formato local. */
+const segundos = (ms: number) => (ms / 1000).toFixed(1).replace('.', ',');
+
 /** Historial en el formato que espera Cortex Analyst, para dar continuidad. */
 function historialDe(turnos: Turno[]): Array<Record<string, unknown>> {
   const mensajes: Array<Record<string, unknown>> = [];
@@ -278,8 +281,14 @@ function Respuesta({
           {meta.cifras_verificadas ? 'Cifras verificadas contra la tabla' : 'Resumen construido con los datos'}
         </Pastilla>
         {n_filas > 0 && <Pastilla tono="azul">{formatearEntero(n_filas)} fila(s)</Pastilla>}
-        <Pastilla>{(meta.ms_total / 1000).toFixed(1).replace('.', ',')} s</Pastilla>
+        <Pastilla>{segundos(meta.ms_total)} s</Pastilla>
       </div>
+
+      <p className="asistente__tiempos">
+        Interpretar la pregunta {segundos(meta.ms_interpretacion)} s · consultar la base{' '}
+        {segundos(meta.ms_consulta)} s · redactar {segundos(meta.ms_redaccion)} s
+        {meta.modelo ? ` (${meta.modelo})` : ''}
+      </p>
 
       {grafica && (
         <div className="asistente__grafica">
