@@ -9,6 +9,7 @@ resumen determinista construido a partir de los datos reales.
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -18,7 +19,12 @@ from backend.database import redactar as redactar_secreto
 
 logger = logging.getLogger("tejido.ia")
 
-_MAX_FILAS_PROMPT = 30
+#: Filas de la tabla que viajan al modelo. Para resumir no hacen falta más: el
+#: detalle lo tiene el usuario en la tabla y en el Excel.
+_MAX_FILAS_PROMPT = 20
+#: Tope de fichas de salida. La redacción son 2 a 5 frases: unas 300 fichas
+#: sobran. Sin tope, un modelo puede extenderse y triplicar el tiempo.
+_MAX_FICHAS_SALIDA = 320
 _MAX_ANCHO_CELDA = 80
 #: Tope de caracteres de la tabla que viaja al modelo. El tiempo de redacción
 #: crece con el tamaño del texto de entrada: un listado de 30 empresas con 20
@@ -128,13 +134,62 @@ def redactar(
         return Redaccion(texto=resumen_determinista(columnas, filas, n_filas, truncado), modelo="", degradado=True)
 
 
-def _completar(sesion_sql: Any, modelo: str, prompt: str) -> str:
-    """Llama a SNOWFLAKE.CORTEX.COMPLETE con el prompt como literal enlazado."""
-    filas = sesion_sql(
-        "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) AS RESPUESTA",
-        [modelo, prompt],
-    )
+def _primer_valor(filas: list[Any]) -> Any:
     if not filas:
+        return None
+    fila = filas[0]
+    if isinstance(fila, dict):
+        return next(iter(fila.values()), None)
+    return fila[0]
+
+
+def _texto_de_respuesta(valor: Any) -> str:
+    """Extrae el texto tanto de la forma con opciones como de la forma simple.
+
+    Con opciones, Cortex devuelve un objeto
+    ``{"choices": [{"messages": "…"}], "usage": {…}}``; sin opciones, el texto
+    plano. Se aceptan las dos para no depender de la variante disponible.
+    """
+    if valor is None:
         return ""
-    valor = filas[0][0] if not isinstance(filas[0], dict) else next(iter(filas[0].values()))
-    return str(valor).strip() if valor else ""
+    texto = valor if isinstance(valor, str) else str(valor)
+    recortado = texto.strip()
+    if recortado.startswith("{"):
+        try:
+            cuerpo = json.loads(recortado)
+        except ValueError:
+            return recortado
+        opciones = cuerpo.get("choices") or []
+        if opciones:
+            mensaje = opciones[0].get("messages") or opciones[0].get("message") or ""
+            return str(mensaje).strip()
+        return ""
+    return recortado
+
+
+def _completar(sesion_sql: Any, modelo: str, prompt: str) -> str:
+    """Pide la redacción a SNOWFLAKE.CORTEX.COMPLETE acotando la salida.
+
+    Se usa la forma con opciones porque permite fijar ``max_tokens`` y
+    ``temperature``. El tiempo de generación es aproximadamente proporcional al
+    número de fichas de salida, así que acotarlo es la palanca principal contra
+    una redacción lenta; con temperatura 0 la respuesta además es reproducible.
+
+    Si la cuenta no admite esa forma, se cae a la forma simple: el aplicativo no
+    puede quedarse sin redactar por una diferencia de versión del servicio.
+    """
+    mensajes = json.dumps([{"role": "user", "content": prompt}])
+    opciones = json.dumps({"temperature": 0, "max_tokens": _MAX_FICHAS_SALIDA})
+    try:
+        filas = sesion_sql(
+            "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, PARSE_JSON(?), PARSE_JSON(?)) AS RESPUESTA",
+            [modelo, mensajes, opciones],
+        )
+        texto = _texto_de_respuesta(_primer_valor(filas))
+        if texto:
+            return texto
+        raise RuntimeError("respuesta vacía con opciones")
+    except Exception as exc:  # noqa: BLE001 - se intenta la forma simple
+        logger.info("COMPLETE con opciones no disponible (%s); se usa la forma simple.", redactar_secreto(exc))
+        filas = sesion_sql("SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) AS RESPUESTA", [modelo, prompt])
+        return _texto_de_respuesta(_primer_valor(filas))

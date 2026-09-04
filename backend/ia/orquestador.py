@@ -195,6 +195,22 @@ class Orquestador:
                 f"{n_filas} fila(s) obtenidas en {ms_sql} ms.",
             )
 
+            # La tabla, la gráfica y la SQL ya están listas: se entregan ahora,
+            # sin esperar a la redacción. El usuario puede leer y descargar el
+            # resultado mientras se escribe el resumen, que es la parte lenta.
+            grafica = graficos.sugerir(columnas, filas)
+            yield {
+                "tipo": "resultado",
+                "consulta_id": consulta_id,
+                "sql": sql_final,
+                "columnas": columnas,
+                "filas": filas[:IA_MAX_ROWS_CLIENT],
+                "n_filas": n_filas,
+                "truncado": truncado or n_filas > IA_MAX_ROWS_CLIENT,
+                "grafica": grafica,
+                "advertencia": IA_ADVERTENCIA,
+            }
+
             # 4 · Redacción dentro de Snowflake ----------------------------
             yield self._etapa(consulta_id, "redactando", "Redactando la respuesta…")
             t_redaccion = time.monotonic()
@@ -230,7 +246,7 @@ class Orquestador:
                 filas=filas[:IA_MAX_ROWS_CLIENT],
                 n_filas=n_filas,
                 truncado=truncado or n_filas > IA_MAX_ROWS_CLIENT,
-                grafica=graficos.sugerir(columnas, filas),
+                grafica=grafica,
                 sugerencias=respuesta.sugerencias,
                 ms_analyst=ms_analyst,
                 ms_sql=ms_sql,

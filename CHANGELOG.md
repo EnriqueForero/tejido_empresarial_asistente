@@ -7,6 +7,25 @@ Para un aplicativo de este tipo: **PATCH** corrige textos, estilos o errores; **
 
 ---
 
+## [3.4.2] — 2026-09-03
+
+### Corregido
+- **La redacción ya no hace esperar a la tabla.** El resultado (tabla, gráfica y consulta SQL) se entrega en cuanto Snowflake responde, y el resumen escrito llega después. Antes había que esperar a que el modelo terminara —unos 40 segundos— para ver algo que ya estaba calculado a los 10.
+- **Se acota la salida del modelo** con `max_tokens` y `temperature: 0`. El tiempo de generación es aproximadamente proporcional al número de fichas de salida; sin tope, un modelo puede extenderse sin necesidad. Si la cuenta no admite esa forma de llamada, se cae a la forma simple.
+- **La tabla que viaja al modelo pasa de 30 a 20 filas.** Para redactar 2 a 5 frases no hacen falta más; el detalle sigue completo en la tabla y en el Excel.
+- **El notebook de publicación validaba el CHANGELOG después de escribir la versión.** Si faltaba la entrada, `package.json` y `backend/config.py` quedaban ya modificados mientras la celda reportaba error, dejando el proyecto a medio versionar. Ahora la comprobación va primero y, si falla, no se toca ningún archivo y se imprime el bloque exacto para pegar.
+- **La comprobación del CHANGELOG exige el encabezado** `## [X.Y.Z]` y no una coincidencia suelta del número, que daba un visto bueno falso si la versión aparecía dentro de otra cifra o de una fecha.
+- **Un tag ya existente deja de ser un callejón sin salida.** El notebook informa cuál es la siguiente versión libre —consultando los tags reales del repositorio— y ofrece dos salidas explícitas: `publicar(etiquetar=False)` para subir el contenido sin versionar (repositorio de respaldo) y `publicar(mover_tag=True)` para mover el tag a este commit.
+
+### Agregado
+- `versiones_publicadas()` y `siguiente_version()` en el notebook.
+- Pruebas: 3 nuevas sobre la entrega progresiva y el acotado de la salida del modelo (78 en total).
+
+## [3.4.1] — 2026-09-03
+
+Primera publicación en el repositorio `tejido_empresarial_asistente`, aislado del
+anterior. Sin cambios funcionales respecto a 3.4.0: sólo el número de versión.
+
 ## [3.4.0] — 2026-09-03
 
 ### Agregado

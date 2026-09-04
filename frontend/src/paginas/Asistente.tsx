@@ -18,6 +18,13 @@ import type { EstadoIA, EventoIA, RespuestaIA } from '../tipos';
 
 type Turno = { pregunta: string; respuesta: RespuestaIA | null; error: string };
 
+/** Mientras se redacta, la respuesta viaja sin texto ni metadatos definitivos. */
+const META_PENDIENTE: RespuestaIA['meta'] = {
+  modelo: '', degradado: false, cifras_verificadas: true,
+  ms_interpretacion: 0, ms_consulta: 0, ms_redaccion: 0, ms_total: 0,
+  version: '', vista_semantica: '',
+};
+
 const ETAPAS: Record<string, string> = {
   interpretando: 'Interpretando la pregunta',
   validando: 'Revisando la consulta',
@@ -81,6 +88,25 @@ export default function Asistente() {
             if (evento.tipo === 'etapa') setEtapa(evento.etapa);
             if (evento.tipo === 'error') {
               setTurnos((previos) => previos.map((t, i) => (i === indice ? { ...t, error: evento.mensaje } : t)));
+            }
+            if (evento.tipo === 'resultado') {
+              // La tabla y la gráfica ya se pueden leer y descargar; el texto
+              // llega en el evento siguiente.
+              const parcial: RespuestaIA = {
+                tipo: 'final',
+                consulta_id: evento.consulta_id,
+                texto: '',
+                sql: evento.sql,
+                columnas: evento.columnas,
+                filas: evento.filas,
+                n_filas: evento.n_filas,
+                truncado: evento.truncado,
+                grafica: evento.grafica,
+                sugerencias: [],
+                advertencia: evento.advertencia,
+                meta: META_PENDIENTE,
+              };
+              setTurnos((previos) => previos.map((t, i) => (i === indice ? { ...t, respuesta: parcial } : t)));
             }
             if (evento.tipo === 'final') {
               setTurnos((previos) => previos.map((t, i) => (i === indice ? { ...t, respuesta: evento } : t)));
@@ -274,21 +300,31 @@ function Respuesta({
 
   return (
     <div className="asistente__respuesta">
-      <p className="asistente__texto">{respuesta.texto}</p>
+      {respuesta.texto ? (
+        <p className="asistente__texto">{respuesta.texto}</p>
+      ) : (
+        <p className="asistente__redactando" role="status">
+          <Spinner oscuro /> Redactando el resumen… la tabla y la gráfica ya están listas.
+        </p>
+      )}
 
       <div className="asistente__sellos">
-        <Pastilla tono={meta.cifras_verificadas ? 'ok' : 'alerta'}>
-          {meta.cifras_verificadas ? 'Cifras verificadas contra la tabla' : 'Resumen construido con los datos'}
-        </Pastilla>
+        {respuesta.texto && (
+          <Pastilla tono={meta.cifras_verificadas ? 'ok' : 'alerta'}>
+            {meta.cifras_verificadas ? 'Cifras verificadas contra la tabla' : 'Resumen construido con los datos'}
+          </Pastilla>
+        )}
         {n_filas > 0 && <Pastilla tono="azul">{formatearEntero(n_filas)} fila(s)</Pastilla>}
-        <Pastilla>{segundos(meta.ms_total)} s</Pastilla>
+        {respuesta.texto && <Pastilla>{segundos(meta.ms_total)} s</Pastilla>}
       </div>
 
-      <p className="asistente__tiempos">
-        Interpretar la pregunta {segundos(meta.ms_interpretacion)} s · consultar la base{' '}
-        {segundos(meta.ms_consulta)} s · redactar {segundos(meta.ms_redaccion)} s
-        {meta.modelo ? ` (${meta.modelo})` : ''}
-      </p>
+      {respuesta.texto && (
+        <p className="asistente__tiempos">
+          Interpretar la pregunta {segundos(meta.ms_interpretacion)} s · consultar la base{' '}
+          {segundos(meta.ms_consulta)} s · redactar {segundos(meta.ms_redaccion)} s
+          {meta.modelo ? ` (${meta.modelo})` : ''}
+        </p>
+      )}
 
       {grafica && (
         <div className="asistente__grafica">

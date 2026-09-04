@@ -162,10 +162,26 @@ export type MetaIA = {
   vista_semantica: string;
 };
 
-/** Evento del flujo SSE: avance por etapas, error, o resultado final. */
+/** Evento del flujo SSE: avance por etapas, resultado, error o texto final. */
 export type EventoIA =
   | { tipo: 'etapa'; consulta_id: string; etapa: string; detalle: string; sql?: string }
   | { tipo: 'error'; consulta_id?: string; mensaje: string }
+  /**
+   * Tabla, gráfica y consulta, entregadas en cuanto Snowflake responde. Llegan
+   * antes que el texto porque redactar es la parte lenta y no hay razón para
+   * hacer esperar lo que ya está calculado.
+   */
+  | {
+      tipo: 'resultado';
+      consulta_id: string;
+      sql: string;
+      columnas: string[];
+      filas: Array<Array<string | number | null>>;
+      n_filas: number;
+      truncado: boolean;
+      grafica: EspecGrafica | null;
+      advertencia: string;
+    }
   | {
       tipo: 'final';
       consulta_id: string;

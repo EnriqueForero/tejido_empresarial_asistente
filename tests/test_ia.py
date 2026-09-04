@@ -386,11 +386,12 @@ def test_la_tabla_del_prompt_se_acota_por_tamano_no_solo_por_filas() -> None:
     assert "filas más, no mostradas" in texto  # declara lo que omitió
 
 
-def test_una_tabla_angosta_no_pierde_filas() -> None:
+def test_una_tabla_angosta_no_pierde_filas_por_el_tope_de_caracteres() -> None:
+    """El recorte por tamaño no debe activarse en una tabla estrecha."""
     from backend.ia.redactor import _MAX_FILAS_PROMPT, tabla_markdown
 
-    filas = [["Bogotá, D.C.", 402118] for _ in range(30)]
-    texto = tabla_markdown(["Departamento", "Empresas"], filas, 30)
+    filas = [["Bogotá, D.C.", 402118] for _ in range(_MAX_FILAS_PROMPT)]
+    texto = tabla_markdown(["Departamento", "Empresas"], filas, len(filas))
     assert len(texto.splitlines()) == _MAX_FILAS_PROMPT + 2  # cabecera + separador
     assert "filas más" not in texto
 
@@ -403,3 +404,65 @@ def test_la_respuesta_informa_el_tiempo_de_cada_etapa() -> None:
         assert clave in meta, clave
         assert isinstance(meta[clave], int)
     assert meta["ms_total"] >= meta["ms_redaccion"]
+
+
+# ── Entrega progresiva: la tabla no espera a la redacción ────────────────
+
+
+def test_la_tabla_y_la_grafica_llegan_antes_que_el_texto() -> None:
+    """Redactar es lo lento; lo ya calculado se entrega sin esperarlo."""
+    eventos = _eventos(_ServicioFalso(), _AnalystFalso(sql=f"SELECT DEPARTAMENTO_EMP FROM {TABLA}"))
+    tipos = [evento["tipo"] for evento in eventos]
+    assert "resultado" in tipos
+    assert tipos.index("resultado") < tipos.index("final")
+
+    resultado = next(evento for evento in eventos if evento["tipo"] == "resultado")
+    assert resultado["columnas"] == ["DEPARTAMENTO", "EMPRESAS"]
+    assert resultado["n_filas"] == 1
+    assert resultado["grafica"] is not None or resultado["n_filas"] == 1
+    assert resultado["sql"]
+    assert resultado["advertencia"] == IA_ADVERTENCIA
+    # El evento intermedio no promete texto: eso es lo que todavía falta.
+    assert "texto" not in resultado
+
+    # Y el final trae exactamente la misma tabla, para que la vista no cambie.
+    final = eventos[-1]
+    assert final["columnas"] == resultado["columnas"]
+    assert final["filas"] == resultado["filas"]
+    assert final["sql"] == resultado["sql"]
+
+
+def test_la_redaccion_acota_la_salida_del_modelo() -> None:
+    """Sin tope de fichas, un modelo puede extenderse y triplicar el tiempo."""
+    import json as _json
+
+    from backend.ia.redactor import _MAX_FICHAS_SALIDA, _completar
+
+    vistas: list[tuple[str, list[Any]]] = []
+
+    def sesion(consulta: str, parametros: list[Any]) -> list[Any]:
+        vistas.append((consulta, parametros))
+        return [[_json.dumps({"choices": [{"messages": "Resumen breve."}]})]]
+
+    assert _completar(sesion, "modelo", "prompt") == "Resumen breve."
+    consulta, parametros = vistas[0]
+    assert "PARSE_JSON" in consulta
+    opciones = _json.loads(parametros[2])
+    assert opciones["max_tokens"] == _MAX_FICHAS_SALIDA
+    assert opciones["temperature"] == 0
+
+
+def test_si_la_forma_con_opciones_no_existe_se_usa_la_simple() -> None:
+    """Una diferencia de versión del servicio no puede dejar sin redacción."""
+    from backend.ia.redactor import _completar
+
+    intentos: list[str] = []
+
+    def sesion(consulta: str, parametros: list[Any]) -> list[Any]:
+        intentos.append(consulta)
+        if "PARSE_JSON" in consulta:
+            raise RuntimeError("invalid argument types for function 'COMPLETE'")
+        return [["Texto por la vía simple."]]
+
+    assert _completar(sesion, "modelo", "prompt") == "Texto por la vía simple."
+    assert len(intentos) == 2

@@ -1,4 +1,4 @@
-# Validación · Tejido Empresarial React 3.4.0
+# Validación · Tejido Empresarial React 3.4.2
 
 Fecha: 2 de septiembre de 2026. Entorno: Windows 11, Python 3.10.5 (venv), Node 22.23.2 (portable), Chrome headless para capturas.
 
@@ -6,7 +6,7 @@ Fecha: 2 de septiembre de 2026. Entorno: Windows 11, Python 3.10.5 (venv), Node 
 
 | Área | Resultado |
 |---|---|
-| `pytest -q` | 75 pruebas aprobadas: API en modo demo (metadatos, filtros dependientes, búsqueda por filtros/razón social/NIT/lote, ficha por NIT, glosario, exportación, SPA, rutas desconocidas, filtros no permitidos), generación SQL (listas blancas, escape, paginación, NIT sólo dígitos), Excel (estructura de hojas, paneles congelados, autofiltro, identificadores como texto, secciones de la ficha, estados del diccionario, nombres de archivo, neutralización de fórmulas). |
+| `pytest -q` | 78 pruebas aprobadas: API en modo demo (metadatos, filtros dependientes, búsqueda por filtros/razón social/NIT/lote, ficha por NIT, glosario, exportación, SPA, rutas desconocidas, filtros no permitidos), generación SQL (listas blancas, escape, paginación, NIT sólo dígitos), Excel (estructura de hojas, paneles congelados, autofiltro, identificadores como texto, secciones de la ficha, estados del diccionario, nombres de archivo, neutralización de fórmulas). |
 | `python -m compileall backend scripts` | Sin errores. |
 | `tsc -b` + `vite build` | Sin errores de tipos; bundle principal 266 kB (84 kB gzip) más páginas cargadas bajo demanda. |
 | Servidor real (uvicorn, `APP_DEMO_MODE=true`) | `/api/health`, `/api/metadata`, búsquedas, ficha, glosario y exportación responden correctamente; SPA servida desde FastAPI con cabeceras de seguridad. |
@@ -24,6 +24,10 @@ Fecha: 2 de septiembre de 2026. Entorno: Windows 11, Python 3.10.5 (venv), Node 
 | Consulta contra el despliegue real | `POST /api/filters/options` y `POST /api/companies/search` en `tejidoempresarialreact-production.up.railway.app` respondían 502 con la conexión verificada. Reproducido el motivo: la imagen no traía `pyarrow`, así que `to_pandas()` del conector falla con «Optional dependency: pandas is not installed». Corregido en `requirements-api.txt` y con una vía alterna por filas. |
 | Lectura de resultados sin `pyarrow` | Cuatro pruebas con un resultado simulado: mismas columnas y filas por las dos vías, importes numéricos (para que el Excel aplique formato de moneda), columnas conservadas en un resultado vacío. |
 | Mensaje de error con la causa | Servidor en modo producción contra una cuenta inexistente: `POST /api/filters/options` responde «No fue posible cargar los filtros. Causa: … 290404 (08001) … Más detalle en la página /estado» y la interfaz lo muestra dentro del panel de filtros, junto a los desplegables vacíos. |
+| Entrega progresiva | Medido en navegador con el flujo simulado: a los 2,6 s la respuesta ya muestra las 24 filas de la tabla, la gráfica y los tres botones (Excel, presentación y «Ver la consulta»), con el aviso «Redactando el resumen… la tabla y la gráfica ya están listas»; a los 6,8 s llega el texto y el desglose de tiempos. El evento intermedio no promete texto, y la tabla del evento final es idéntica a la del intermedio, así que la vista no cambia bajo los pies del usuario. |
+| Acotado de la salida del modelo | La llamada usa la forma con opciones (`max_tokens` 320, `temperature` 0) y, si la cuenta no la admite, cae a la forma simple. Cubierto por dos pruebas que verifican las opciones enviadas y el respaldo. |
+| Celda A.5 del notebook | Ejecutada su lógica fuera de Colab sobre una copia del proyecto: con una versión que el CHANGELOG no registra, aborta, **no modifica ningún archivo** (`package.json` y `config.py` intactos) e imprime el bloque exacto para pegar; con la versión registrada, sincroniza los dos archivos. Antes escribía la versión y validaba después, dejando el proyecto a medio versionar. |
+| Sintaxis del notebook | Las 25 celdas se compilan con `ast.parse` (descartando las magias `%%time`). Los 75 archivos requeridos del pre-flight existen. |
 | Desglose de tiempos | La respuesta informa `ms_interpretacion`, `ms_consulta`, `ms_redaccion` y `ms_total`, y la interfaz los muestra bajo cada respuesta: «Interpretar la pregunta 6,2 s · consultar la base 4,1 s · redactar 21,7 s (claude-3-5-sonnet)». Verificado en navegador. |
 | Tamaño del prompt | Una tabla de 30 filas por 20 columnas pasaba 35.205 caracteres al modelo; con el recorte quedan 4.988 y el texto declara las filas omitidas. Una tabla angosta de 30 filas no pierde ninguna. |
 | Coherencia de dependencias | `tests/test_dependencias.py` compara `requirements-api.txt` con `requirements-test.txt`. Se comprobó que **detecta el fallo real**: al quitar `python-pptx` de la lista de pruebas, el conjunto falla nombrando el paquete que falta; al restaurarlo, pasa. También verifica que las versiones compartidas coincidan y que no queden excepciones obsoletas. |
