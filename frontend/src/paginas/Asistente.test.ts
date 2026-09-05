@@ -8,7 +8,7 @@ import type { MetaIA } from '../tipos';
 import { contexto, type Turno } from './Asistente';
 
 const META: MetaIA = {
-  modelo: '', degradado: false, motivo_degradacion: '', cifras_verificadas: true, forma_redaccion: '',
+  modelo: '', degradado: false, motivo_degradacion: '', detalle_degradacion: '', cifras_verificadas: true, forma_redaccion: '',
   ms_interpretacion: 0, ms_consulta: 0, ms_correccion: 0, ms_redaccion: 0, ms_total: 0,
   intentos_sql: 0, analyst_request_id: '', version: '', vista_semantica: '',
 };

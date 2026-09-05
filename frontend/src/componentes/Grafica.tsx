@@ -27,6 +27,8 @@ type Punto = { x: number; y: number; texto: string };
 
 function formatear(valor: number, formato: EspecGrafica['formato']): string {
   if (formato === 'porcentaje') return `${valor.toFixed(1).replace('.', ',')} %`;
+  // Un promedio dibujado como entero diría algo distinto de la tabla.
+  if (formato === 'decimal') return valor.toFixed(2).replace('.', ',');
   if (formato === 'usd') return `USD ${abreviar(valor)}`;
   if (formato === 'cop') return `$ ${abreviar(valor, 'millones')}`;
   return formatearEntero(valor);

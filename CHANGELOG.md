@@ -7,6 +7,40 @@ Para un aplicativo de este tipo: **PATCH** corrige textos, estilos o errores; **
 
 ---
 
+## [3.5.1] — 2026-09-05
+
+La redacción con IA falló en las tres primeras preguntas de producción, siempre
+igual: veinte segundos de espera y el resumen automático de respaldo. Esta
+versión ataca la causa, deja de pagar la espera cuando ya se sabe que va a
+fallar, y presenta las cifras con su unidad.
+
+### Corregido
+- **El modelo que traía el aplicativo por defecto ya no existe.** `claude-3-5-sonnet` fue retirado de Snowflake Cortex, y con un nombre inexistente cada pregunta gastaba ~20 s de warehouse para terminar en el resumen automático. El valor por defecto pasa a `claude-haiku-4-5` y `/estado` incorpora **«Probar la redacción con IA»**, que prueba varios modelos y dice cuáles responden en la cuenta. Los nombres de modelo caducan: por eso la prueba está en el aplicativo y el valor sigue siendo una variable (`SF_CORTEX_MODEL`).
+- **Tras tres fallos seguidos, la redacción deja de intentarse durante diez minutos.** Antes, cada pregunta volvía a pagar los veinte segundos aunque la anterior acabara de fallar por la misma razón. Las respuestas llegan ahora en el tiempo de la consulta, con el aviso de siempre y el motivo `redaccion_pausada`. Configurable con `IA_REDACCION_FALLOS_PARA_PAUSA` e `IA_REDACCION_PAUSA`.
+- **La causa del fallo se lee en la pantalla**, dentro de «¿Por qué?», sin abrir los registros de Railway ni el diagnóstico: si es un privilegio, un modelo inexistente o una región sin modelos de generación, lo dice la propia respuesta (`meta.detalle_degradacion`, ya sin secretos).
+- **El diagnóstico dejó de gastar créditos de IA por su cuenta.** El paso «cortex_complete» se ejecutaba al abrir `/estado`; ahora sólo con el botón. Se añade el paso **«cortex_region»**, que informa la región de la cuenta y si tiene habilitada la inferencia entre regiones: es la causa de que ningún modelo responda aunque los permisos estén bien.
+- **Una respuesta con una forma que el aplicativo no reconoce ya no se confunde con un error de firma.** Antes, cualquier fallo al leer el texto hacía repetir la llamada con la forma simple, es decir, pagar dos veces por el mismo error. Sólo un error real de firma o de compilación permite el segundo intento.
+- **El resumen automático de respaldo se lee como español, no como un volcado.** Las cifras llevan separador de miles y coma decimal (`52.158.504.845,93`), los porcentajes su símbolo, y una empresa se nombra por su razón social y no por su NIT. Es el texto que el usuario ve cada vez que la IA no está disponible: tenía que estar bien escrito.
+- **La gráfica ya no contradice a la tabla.** Un promedio de 19,89 se dibujaba como «20» porque toda cifra sin nombre reconocido se trataba como entero. Ahora se detecta el decimal por los valores, y `pobreza`/`informalidad` se reconocen como porcentaje.
+- **El Excel del asistente distingue dólares de pesos.** Las columnas de exportaciones (`… USD`, `FOB`) salen con dos decimales y símbolo, las de pesos sin decimales, y el resto como número. La tabla en pantalla aplica el mismo criterio.
+- El diagnóstico avisa si la vista semántica desplegada en la cuenta es anterior a la 3.5.0 (busca `CADENA_EXPORTADA`): una vista vieja explica que una consulta generada pida columnas que el contrato de listados ya no permite.
+
+### Corregido tras la revisión adversaria de esta misma versión
+- **El resumen automático ya no afirma un máximo que no puede conocer.** Con un resultado recortado, «el valor más alto» se calculaba sobre las filas traídas, que no son todas. Es la misma regla que el código ya le exige al modelo: sin resultado completo, no hay superlativo.
+- **La cifra del resumen automático lleva su unidad y el NIT deja de escribirse con puntos.** El prompt exige al modelo decir siempre la unidad; el texto de respaldo no la decía. Ahora la regla de presentación vive en un solo sitio (`backend/ia/forma.clase_de_cifra`), gemela de la del navegador (`frontend/src/formato.ts`), y la comparten el resumen, el Excel del asistente y la tabla en pantalla.
+- El «valor más alto» se mide por una columna que mide algo: en una tabla de empresas era el NIT, porque era la primera columna numérica.
+- El resumen ya no promete «la tabla de abajo tiene el detalle completo» cuando el resultado pasa de 500 filas y la pantalla sólo muestra las primeras; y una categoría vacía se lee «Sin dato» en vez de un paréntesis en blanco.
+- **La prueba de modelos no puede dejar al propietario esperando minutos.** Probaba las dos formas de `COMPLETE` con cada modelo, y un modelo inexistente tarda ~20 s en fallar: con cinco candidatos eran más de tres minutos en una sola petición. Ahora rige la misma regla que en la redacción real (un fallo cuesta una llamada), hay un tope de 75 s y el mensaje dice qué modelos quedaron sin probar.
+
+### Agregado
+- `docs/COSTOS.md`: qué gasta créditos de Snowflake y qué no, con los guiones listos para Snowsight (`AUTO_SUSPEND`, consumo de 30 días, consumo de Cortex, resource monitor). Responde la pregunta de si el servicio siempre encendido en Railway consume créditos: no los consume; el gasto lo domina el `AUTO_SUSPEND` del warehouse y el acceso abierto.
+- `snowflake/01_permisos_asistente.sql` y `02_comparar_modelos.sql` comprueban la región y la inferencia entre regiones, y usan nombres de modelo vigentes.
+- Pruebas: 150 → 161. Cubren el interruptor de la redacción, la causa visible en pantalla, el formato de la gráfica y del Excel, y el resumen automático. El cuaderno de publicación exige ahora, automáticamente, toda prueba del frontend y todo documento de `docs/`.
+
+### Cambiado
+- `SF_CORTEX_MODEL` por defecto: `claude-3-5-sonnet` → `claude-haiku-4-5`.
+- `/api/diagnostico` acepta `?cortex=true` para incluir la prueba de redacción; sin él, no llama a Cortex.
+
 ## [3.5.0] — 2026-09-04
 
 Puesta a punto del asistente: rápido cuando puede serlo, honesto cuando no, con

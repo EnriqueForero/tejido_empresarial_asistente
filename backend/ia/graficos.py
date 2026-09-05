@@ -98,15 +98,24 @@ def _recortar(categorias: list[str], valores: list[float], tope: int) -> tuple[l
     return categorias[: tope - 1] + [_OTROS], valores[: tope - 1] + [resto]
 
 
-def _formato(nombre: str) -> str:
-    """Cómo se escriben los valores del eje: moneda, porcentaje o entero."""
+def _formato(nombre: str, valores: list[float] | None = None) -> str:
+    """Cómo se escriben los valores del eje: moneda, porcentaje, decimal o entero.
+
+    La gráfica nunca puede contradecir a la tabla: un promedio de 19,89 dibujado
+    como «20» dice algo distinto de lo que muestra la fila. Por eso, cuando los
+    valores no son enteros y son pequeños, se conservan dos decimales.
+    """
     texto = nombre.lower()
-    if "%" in texto or "porcentaje" in texto or texto.startswith("pct"):
+    if "%" in texto or "porcentaje" in texto or texto.startswith("pct") or "pobreza" in texto or "informalidad" in texto:
         return "porcentaje"
     if "usd" in texto or "fob" in texto or "expo" in texto:
         return "usd"
     if "cop" in texto or "ingreso" in texto or "activo" in texto or "utilidad" in texto:
         return "cop"
+    if valores:
+        finitos = [valor for valor in valores if isinstance(valor, (int, float))]
+        if finitos and max(abs(valor) for valor in finitos) < 1000 and any(valor != int(valor) for valor in finitos):
+            return "decimal"
     return "entero"
 
 
@@ -131,7 +140,7 @@ def sugerir(columnas: list[str], filas: list[list[Any]]) -> dict[str, Any] | Non
             "titulo": columnas[indice],
             "categorias": [columnas[indice]],
             "series": [{"nombre": columnas[indice], "color": TONO_UNICO, "valores": [_numero(filas[0][indice])]}],
-            "formato": _formato(columnas[indice]),
+            "formato": _formato(columnas[indice], [_numero(filas[0][indice])]),
             "eje": "",
             "nota": "",
         }
@@ -150,7 +159,7 @@ def sugerir(columnas: list[str], filas: list[list[Any]]) -> dict[str, Any] | Non
                     "valores": [_numero(filas[0][i]) for i in periodos],
                 }
             ],
-            "formato": _formato(columnas[periodos[0]]),
+            "formato": _formato(columnas[periodos[0]], [_numero(filas[0][i]) for i in periodos]),
             "eje": "",
             "nota": "",
         }
@@ -193,7 +202,7 @@ def sugerir(columnas: list[str], filas: list[list[Any]]) -> dict[str, Any] | Non
                 "titulo": "Comparación por " + columnas[eje].lower(),
                 "categorias": categorias,
                 "series": series,
-                "formato": _formato(columnas[medidas[0]]),
+                "formato": _formato(columnas[medidas[0]], [v for serie in series for v in serie["valores"]]),
                 "eje": columnas[eje],
                 "nota": _nota_recorte(len(categorias_crudas), MAX_CATEGORIAS),
             }
@@ -207,7 +216,7 @@ def sugerir(columnas: list[str], filas: list[list[Any]]) -> dict[str, Any] | Non
         "titulo": f"{columnas[medida]} por {columnas[eje].lower()}",
         "categorias": categorias,
         "series": [{"nombre": columnas[medida], "color": TONO_UNICO, "valores": valores}],
-        "formato": _formato(columnas[medida]),
+        "formato": _formato(columnas[medida], valores),
         "eje": columnas[eje],
         "nota": _nota_recorte(len(categorias_crudas), MAX_CATEGORIAS),
     }
@@ -250,7 +259,7 @@ def _apiladas(
         "titulo": f"{columnas[medida]} por {columnas[eje].lower()} y {columnas[serie].lower()}",
         "categorias": recortadas,
         "series": series,
-        "formato": _formato(columnas[medida]),
+        "formato": _formato(columnas[medida], [v for serie in series for v in serie["valores"]]),
         "eje": columnas[eje],
         "nota": _nota_recorte(len(categorias), MAX_CATEGORIAS),
     }

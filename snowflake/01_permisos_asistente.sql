@@ -46,8 +46,19 @@ FROM APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION.TEJIDO_EMPRESARIAL_COMPLETO_BAS
 --     → 1.678.643 | 1.678.568 | 14.838
 
 -- (c) El rol puede redactar con Cortex.
-SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', 'Responde solo: listo') AS PRUEBA;
+--     OJO con dos cosas que hacen fallar esta prueba aunque el permiso esté bien:
+--     1. Los nombres de modelo caducan. 'claude-3-5-sonnet' fue retirado.
+--     2. Si la región de la cuenta no aloja modelos de generación, hace falta
+--        habilitar la inferencia entre regiones (ver el bloque de abajo).
+SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-haiku-4-5', 'Responde solo: listo') AS PRUEBA;
 --     → una respuesta breve, sin error de privilegios.
+
+-- (c.2) En qué región está la cuenta y si puede usar modelos de otras regiones.
+SELECT CURRENT_REGION() AS REGION;
+SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT;
+--     → si (c) falla con «model is unavailable in your region», ejecute con ACCOUNTADMIN:
+--       ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
+--       (o 'AWS_US' si los datos deben permanecer en Estados Unidos).
 
 -- (d) Consulta directa a la vista semántica, sin IA (sirve para tableros).
 SELECT * FROM SEMANTIC_VIEW(

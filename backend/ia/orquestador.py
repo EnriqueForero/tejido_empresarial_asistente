@@ -403,6 +403,7 @@ class Orquestador:
                 modelo=redaccion.modelo,
                 degradado=redaccion.degradado,
                 motivo=redaccion.motivo,
+                detalle=redaccion.error,
                 cifras_ok=verificacion.ok,
                 forma_redaccion=redaccion.forma,
                 inicio=inicio,
@@ -512,6 +513,7 @@ class Orquestador:
         modelo: str = "",
         degradado: bool = False,
         motivo: str = "",
+        detalle: str = "",
         cifras_ok: bool = True,
         forma_redaccion: str = "",
     ) -> dict[str, Any]:
@@ -519,6 +521,9 @@ class Orquestador:
             "modelo": modelo,
             "degradado": degradado,
             "motivo_degradacion": motivo,
+            # La causa real, ya sin secretos: quien mira la pantalla no debería tener
+            # que abrir /estado ni los registros para saber por qué se degradó.
+            "detalle_degradacion": detalle[:300],
             "cifras_verificadas": cifras_ok,
             "forma_redaccion": forma_redaccion,
             "ms_interpretacion": ms_analyst,

@@ -113,11 +113,11 @@ export default function Estado() {
   }, [estado, probar]);
 
   const revisar = useCallback(
-    async (valor = token) => {
+    async (valor = token, conCortex = false) => {
       setCargandoDiagnostico(true);
       setErrorDiagnostico('');
       try {
-        setDiagnostico(await obtenerDiagnostico(valor));
+        setDiagnostico(await obtenerDiagnostico(valor, conCortex));
       } catch (error) {
         setDiagnostico(null);
         setErrorDiagnostico(error instanceof ErrorApi ? error.message : 'No fue posible obtener el diagnóstico.');
@@ -307,6 +307,21 @@ export default function Estado() {
                 <div className="mt-12">
                   <Aviso tipo={diagnostico.todo_ok === false ? 'error' : 'ok'}>{diagnostico.resumen}</Aviso>
                 </div>
+                <p className="texto-suave chico mt-12">
+                  La prueba de la redacción con inteligencia artificial va aparte porque es el único paso que gasta
+                  créditos de Cortex. Púlsela cuando el asistente entregue el resumen automático en vez del texto
+                  escrito: dice qué modelo responde en esta cuenta y cuál poner en <code>SF_CORTEX_MODEL</code>.
+                  Puede tardar hasta un minuto y medio, porque un modelo que ya no existe tarda unos veinte segundos
+                  en fallar.
+                </p>
+                <button
+                  type="button"
+                  className="boton boton--fantasma boton--chico mt-8"
+                  onClick={() => void revisar(token, true)}
+                  disabled={cargandoDiagnostico}
+                >
+                  {cargandoDiagnostico ? 'Probando…' : 'Probar la redacción con IA'}
+                </button>
                 {diagnostico.siguiente_paso && (
                   <p className="estado-sugerencia">
                     <strong>Qué hacer:</strong> {diagnostico.siguiente_paso}

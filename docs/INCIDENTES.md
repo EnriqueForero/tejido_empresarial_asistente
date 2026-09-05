@@ -15,8 +15,43 @@ aplicativo: la causa de un fallo casi nunca está donde aparece el error.
 | 2026-09-04 | El validador de SQL no leía la sentencia como Snowflake: `//` y `$$…$$` escondían un `UNION` a otro esquema | Lector de fichas con las tres formas de comentario y las dos de cadena; se rechaza lo que quede sin cerrar |
 | 2026-09-04 | Un candado no reentrante dejaba colgada la primera pregunta del servicio | `threading.RLock` y una prueba que crea el orquestador |
 | 2026-09-04 | Cuarta publicación fallida: una prueba importaba a otra y en Colab el módulo no existía | `tests/dobles.py` + `pythonpath` en `pyproject.toml`; la batería corre desde cualquier directorio |
+| 2026-09-05 | La redacción con IA falla en las tres primeras preguntas de producción, 20 s cada una | Interruptor tras 3 fallos (D-13); modelo vigente por defecto; prueba de modelos en `/estado` (D-14); causa visible en pantalla |
 
 ---
+
+## 2026-09-05 · El modelo por defecto ya no existía
+
+**Lo que se vio.** Las tres primeras preguntas reales del servicio, seguidas:
+29,3 s · 32,1 s · 28,0 s, y en las tres «Resumen automático de los datos: la
+redacción con IA no estuvo disponible», con 20,5 s · 21,0 s · 20,7 s gastados en
+redactar. Idénticos. La corrección de la 3.5.0 había funcionado —una llamada por
+pregunta en vez de cuatro— pero la llamada seguía fallando.
+
+**Causa.** `claude-3-5-sonnet`, el valor por defecto de `SF_CORTEX_MODEL` desde
+la primera versión del asistente, fue retirado de Snowflake Cortex. Con un
+nombre de modelo inexistente, `SNOWFLAKE.CORTEX.COMPLETE` falla siempre. La
+redacción **nunca** había funcionado en este despliegue: los 88,7 s de la 3.5.0
+eran cuatro veces el mismo error, y los 20,5 s de la 3.5.1 son ese error una
+sola vez. Una segunda causa posible, que la prueba en `/estado` ahora distingue,
+es que la región de la cuenta (`us-east-2`) no aloje modelos de generación y
+haga falta `CORTEX_ENABLED_CROSS_REGION`.
+
+**Por qué costó tanto verlo.** El aplicativo degradaba correctamente y el
+resumen automático es legible, así que el fallo se leía como lentitud. El
+mensaje real de Snowflake sólo estaba en los registros de Railway.
+
+**Protección.** El valor por defecto pasa a `claude-haiku-4-5`;
+`redactor.sondear_complete` prueba una lista de candidatos y, cuando ninguno
+responde, nombra los que sí; `/estado` lo ejecuta bajo demanda con «Probar la
+redacción con IA» y añade el paso «cortex_region»; la causa redactada llega a la
+pantalla en `meta.detalle_degradacion`, así que la próxima vez se ve sin abrir
+registros. Y el interruptor (D-13) impide que un fallo conocido se pague en cada
+pregunta. Pruebas: `test_tras_varios_fallos_seguidos_la_redaccion_deja_de_llamarse`,
+`test_la_causa_del_fallo_llega_a_la_pantalla`.
+
+**Lección.** Un valor por defecto que apunta a un servicio externo caduca sin
+avisar. Si el aplicativo depende de un nombre que otro decide, tiene que poder
+comprobarlo él mismo.
 
 ## 2026-09-04 · La redacción falló y se vio como lentitud
 

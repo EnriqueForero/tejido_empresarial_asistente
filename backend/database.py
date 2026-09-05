@@ -530,8 +530,14 @@ class SnowflakeService:
             return
 
     # ── Diagnóstico paso a paso ─────────────────────────────────────────
-    def diagnostico(self) -> list[dict[str, Any]]:
-        """Recorre la cadena completa y reporta dónde se rompe (sin secretos)."""
+    def diagnostico(self, probar_cortex: bool = False) -> list[dict[str, Any]]:
+        """Recorre la cadena completa y reporta dónde se rompe (sin secretos).
+
+        Args:
+            probar_cortex: Si es cierto, prueba además la redacción con IA. Va
+                aparte porque es el único paso que gasta créditos de Cortex, y
+                el diagnóstico se abre a menudo sólo para mirar la conexión.
+        """
         from backend.config import (
             COMPANY_TABLE,
             EVENT_TABLE,
@@ -654,23 +660,70 @@ class SnowflakeService:
         #    asistente lo dice en pantalla y el resto sigue funcionando.
         from backend.config import ASISTENTE_LOG_TABLE, CORTEX_MODEL, SEMANTIC_VIEW
 
-        paso(
-            "vista_semantica",
-            f"Vista semántica del asistente · {SEMANTIC_VIEW}",
-            lambda: {"definiciones": len(self.session().sql(f"DESCRIBE SEMANTIC VIEW {SEMANTIC_VIEW}").collect())},
-        )
+        def _vista_semantica():
+            filas = self.session().sql(f"DESCRIBE SEMANTIC VIEW {SEMANTIC_VIEW}").collect()
+            # `CADENA_EXPORTADA` sólo existe desde la versión 3.5.0 del modelo. Sin
+            # ella, la cuenta tiene una versión anterior: las preguntas sugeridas no
+            # tienen consulta verificada y tardan más de lo que deberían.
+            texto = " ".join(str(fila) for fila in filas).upper()
+            al_dia = "CADENA_EXPORTADA" in texto
+            return {
+                "definiciones": len(filas),
+                "version_3_5_0_desplegada": al_dia,
+                "nota": (
+                    "Al día."
+                    if al_dia
+                    else "La cuenta tiene una versión anterior del modelo semántico: vuelva a desplegar "
+                    "snowflake/TEJIDO_EMPRESARIAL_SEGMENTACION.sv.yaml (ver snowflake/LEEME.md)."
+                ),
+            }
+
+        paso("vista_semantica", f"Vista semántica del asistente · {SEMANTIC_VIEW}", _vista_semantica)
         paso(
             "tabla_asistente_log",
             f"Tabla de métricas del asistente · {ASISTENTE_LOG_TABLE}",
             lambda: {"filas_de_prueba": len(self.session().sql(f"SELECT * FROM {ASISTENTE_LOG_TABLE} LIMIT 1").collect())},
         )
 
-        def _cortex_complete():
-            from backend.ia.redactor import sondear_complete
+        def _region():
+            fila = self.session().sql("SELECT CURRENT_REGION() AS REGION").collect()
+            region = str(fila[0][0]) if fila else "desconocida"
+            entre_regiones = "no se pudo consultar (requiere ACCOUNTADMIN)"
+            try:
+                parametros = self.session().sql("SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT").collect()
+                entre_regiones = str(parametros[0][1]) if parametros else "sin definir"
+            except Exception:  # noqa: BLE001 - es informativo, no bloquea
+                pass
+            return {
+                "region": region,
+                "inferencia_entre_regiones": entre_regiones,
+                "nota": (
+                    "Si ningún modelo responde y esta cuenta está en una región sin modelos de generación, "
+                    "un ACCOUNTADMIN debe ejecutar: ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';"
+                ),
+            }
 
-            return sondear_complete(self.filas_con_parametros, CORTEX_MODEL)
+        paso("cortex_region", "Región de la cuenta e inferencia entre regiones", _region)
 
-        paso("cortex_complete", f"Redacción con SNOWFLAKE.CORTEX.COMPLETE · {CORTEX_MODEL}", _cortex_complete)
+        if probar_cortex:
+            def _cortex_complete():
+                from backend.ia.redactor import sondear_complete
+
+                return sondear_complete(self.filas_con_parametros, CORTEX_MODEL)
+
+            paso("cortex_complete", f"Redacción con SNOWFLAKE.CORTEX.COMPLETE · {CORTEX_MODEL}", _cortex_complete)
+        else:
+            pasos.append({
+                "paso": "cortex_complete",
+                "descripcion": f"Redacción con SNOWFLAKE.CORTEX.COMPLETE · {CORTEX_MODEL}",
+                "ok": True,
+                "detalle": {
+                    "probado": False,
+                    "nota": "No se probó: es el único paso que gasta créditos de IA. "
+                            "Añada ?cortex=1 al diagnóstico (o pulse «Probar la redacción con IA») para ejecutarlo.",
+                },
+                "segundos": 0.0,
+            })
         return pasos
 
 

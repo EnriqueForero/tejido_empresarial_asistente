@@ -42,19 +42,21 @@ Respuesta:';
 --     táchelo de la lista y siga con el siguiente.
 -- =============================================================================
 
+-- IMPORTANTE: los nombres de modelo caducan. Si una línea falla con «unknown
+-- model», ese nombre ya no existe: táchelo y siga. Si TODAS fallan con «model is
+-- unavailable in your region», el problema no es el nombre sino la región: hace
+-- falta habilitar la inferencia entre regiones (ver 01_permisos_asistente.sql).
+
 -- Rápidos y económicos (candidatos preferidos para esta tarea)
-SELECT 'claude-3-5-haiku'  AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-haiku',  $PROMPT) AS RESPUESTA;
+SELECT 'claude-haiku-4-5'  AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-haiku-4-5',  $PROMPT) AS RESPUESTA;
 SELECT 'llama3.1-8b'       AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('llama3.1-8b',       $PROMPT) AS RESPUESTA;
-SELECT 'mistral-7b'        AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('mistral-7b',        $PROMPT) AS RESPUESTA;
 
 -- Intermedios (buen español, coste medio)
-SELECT 'llama3.3-70b'      AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('llama3.3-70b',      $PROMPT) AS RESPUESTA;
+SELECT 'claude-sonnet-4-6' AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-sonnet-4-6', $PROMPT) AS RESPUESTA;
 SELECT 'mistral-large2'    AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('mistral-large2',    $PROMPT) AS RESPUESTA;
 
--- Grandes (los que hoy usa: más caros y más lentos para esta tarea)
-SELECT 'claude-3-5-sonnet' AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', $PROMPT) AS RESPUESTA;
-SELECT 'claude-3-7-sonnet' AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-3-7-sonnet', $PROMPT) AS RESPUESTA;
-SELECT 'claude-4-sonnet'   AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-4-sonnet',   $PROMPT) AS RESPUESTA;
+-- Grandes (más caros y más lentos para una tarea de 90 palabras)
+SELECT 'claude-sonnet-5'   AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-sonnet-5',   $PROMPT) AS RESPUESTA;
 
 -- =============================================================================
 -- 1b · La forma con opciones, que es la que usa el aplicativo

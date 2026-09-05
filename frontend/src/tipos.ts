@@ -154,7 +154,7 @@ export type EspecGrafica = {
   titulo: string;
   categorias: string[];
   series: SerieGrafica[];
-  formato: 'entero' | 'usd' | 'cop' | 'porcentaje';
+  formato: 'entero' | 'decimal' | 'usd' | 'cop' | 'porcentaje';
   eje: string;
   nota: string;
 };
@@ -163,8 +163,10 @@ export type MetaIA = {
   modelo: string;
   /** El texto es el resumen automático de los datos, no la redacción con IA. */
   degradado: boolean;
-  /** 'redaccion_fallo' · 'respuesta_vacia' · 'cifras_sin_respaldo' · ''. */
+  /** 'redaccion_fallo' · 'respuesta_vacia' · 'cifras_sin_respaldo' · 'redaccion_pausada' · ''. */
   motivo_degradacion: string;
+  /** Causa real, ya sin secretos, para no tener que abrir /estado ni los registros. */
+  detalle_degradacion: string;
   cifras_verificadas: boolean;
   /** Con qué firma de COMPLETE se redactó ('opciones' | 'simple' | ''). */
   forma_redaccion: string;

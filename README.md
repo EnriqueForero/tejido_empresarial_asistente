@@ -116,7 +116,7 @@ Si configura sólo una de las dos variables, el aplicativo responde 503 a propó
 
 ## Activar el asistente y sus métricas (una sola vez, en Snowflake)
 
-No hace falta ninguna credencial nueva. En Snowsight, con un rol administrador, ejecute en orden `snowflake/01_permisos_asistente.sql`, `snowflake/03_telemetria_asistente.sql` y `snowflake/04_minimo_privilegio.sql`, y redespliegue el modelo semántico (`snowflake/LEEME.md`). El paso a paso, con qué hacer ante cada error, está en [`ASISTENTE.md`](ASISTENTE.md); las consultas para leer las métricas, en [`docs/METRICAS.md`](docs/METRICAS.md).
+No hace falta ninguna credencial nueva. En Snowsight, con un rol administrador, ejecute en orden `snowflake/01_permisos_asistente.sql`, `snowflake/03_telemetria_asistente.sql` y `snowflake/04_minimo_privilegio.sql`, y redespliegue el modelo semántico (`snowflake/LEEME.md`). El paso a paso, con qué hacer ante cada error, está en [`ASISTENTE.md`](ASISTENTE.md); las consultas para leer las métricas, en [`docs/METRICAS.md`](docs/METRICAS.md); qué gasta créditos de Snowflake y qué no, en [`docs/COSTOS.md`](docs/COSTOS.md).
 
 ## Publicación y demostración desde Google Colab
 
@@ -149,7 +149,7 @@ Cuando llegue un nuevo mes o se cierre un año, edite **sólo** `backend/config.
 ## Calidad y pruebas
 
 ```bash
-# Backend: revisión estática + 129 pruebas (API en modo demo, SQL, guardas, redactor, telemetría, Excel, modelo semántico, rutas)
+# Backend: revisión estática + 161 pruebas (API en modo demo, SQL, guardas, redactor, telemetría, Excel, modelo semántico, rutas)
 pip install -r requirements-dev.txt
 ruff check backend tests scripts
 pytest -q
@@ -162,7 +162,7 @@ docker build -t tejido-empresarial .
 docker run --rm -p 8080:8080 -e APP_DEMO_MODE=true tejido-empresarial
 ```
 
-La integración continua (`.github/workflows/build.yml`) repite estas comprobaciones en cada push y pull request. `CLAUDE.md` recoge los invariantes del proyecto y la definición de «terminado»; `docs/DECISIONES.md`, las decisiones de arquitectura; `docs/INCIDENTES.md`, lo aprendido de cada fallo.
+La integración continua (`.github/workflows/build.yml`) repite estas comprobaciones en cada push y pull request. `CLAUDE.md` recoge los invariantes del proyecto y la definición de «terminado»; `docs/DECISIONES.md`, las decisiones de arquitectura; `docs/INCIDENTES.md`, lo aprendido de cada fallo; `docs/COSTOS.md`, el consumo de créditos.
 
 Herramientas adicionales en `scripts/`:
 

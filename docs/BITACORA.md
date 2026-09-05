@@ -4,6 +4,37 @@ Qué se hizo, cuándo y con qué resultado, en orden cronológico. El CHANGELOG
 dice qué cambió en cada versión; esta bitácora dice cómo se llegó allí. Las
 decisiones de fondo están en `DECISIONES.md`; los fallos, en `INCIDENTES.md`.
 
+## 2026-09-05 · 3.5.1 — la redacción con IA, de verdad
+
+**Punto de partida.** La 3.5.0 se publicó y funcionó: la tabla llega antes que
+el texto, las descargas traen todas las filas, las guardas resisten. Pero las
+tres primeras preguntas reales degradaron igual, con 20,5 s · 21,0 s · 20,7 s en
+redactar. El propietario preguntó además si el servicio siempre encendido en
+Railway consume créditos de Snowflake.
+
+**Método.** Comparar los tiempos entre versiones antes de tocar nada: 88,7 s
+eran exactamente 4 × 20,5 s, luego la 3.5.0 había hecho su trabajo y el fallo
+era anterior. De ahí la conclusión de que la redacción nunca había funcionado en
+este despliegue y de que la causa estaba fuera del código: el nombre del modelo.
+Para la pregunta de los créditos, revisión del código, del `Dockerfile` y de
+`railway.toml` buscando qué llama a Snowflake sin que nadie pregunte.
+
+**Lo que se hizo.** Modelo por defecto vigente y prueba de modelos en `/estado`
+(D-14); interruptor de la redacción tras tres fallos (D-13); causa del fallo
+visible en la propia respuesta; el diagnóstico deja de gastar créditos de IA por
+su cuenta y añade el paso de región; el resumen automático se reescribe para que
+se lea como español, con separadores de miles y la razón social de la empresa;
+la gráfica deja de redondear un promedio a entero; el Excel del asistente
+distingue dólares de pesos; `docs/COSTOS.md` responde la pregunta de los
+créditos con guiones listos para Snowsight.
+
+**Resultado.** 155 pruebas en verde, `ruff` limpio, vitest y build del frontend
+sin cambios de contrato. Queda pendiente del propietario, en Snowflake y no en
+el código: fijar `SF_CORTEX_MODEL` con lo que diga la prueba, habilitar la
+inferencia entre regiones si hace falta, redesplegar el YAML del modelo
+semántico (la cuenta todavía tiene el de la 3.4.x) y bajar el `AUTO_SUSPEND` del
+warehouse.
+
 ## 2026-09-04 · 3.5.0 — puesta a punto del asistente
 
 **Punto de partida.** Producción (dominio nuevo, 3.4.2) con conexión verificada.

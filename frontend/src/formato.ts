@@ -8,8 +8,34 @@ const decimal1 = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maxi
 
 const PALABRAS_IDENTIFICADOR = ['NIT', 'Código', 'Dígito', 'ID del', 'posición arancelaria estrella'];
 
-export const esIdentificador = (columna: string) => PALABRAS_IDENTIFICADOR.some((palabra) => columna.includes(palabra));
-export const esMonetaria = (columna: string) => columna.includes('(COP)') || columna.includes('FOB USD');
+/**
+ * Moneda por el nombre de la columna, no por una etiqueta exacta. El asistente
+ * inventa alias («Total expo 5 anos USD», «expo_2025_usd») que no siguen la
+ * convención de la sección de consulta («… (FOB USD)»), y sin esto se veían como
+ * números sueltos junto a columnas hermanas ya formateadas.
+ */
+const DOLARES = /\b(USD|FOB)\b/i;
+const PESOS = /\bCOP\b/i;
+// El guion bajo cuenta como letra para \b, así que un alias crudo como
+// «expo_2025_usd» no se reconocería sin separarlo primero.
+const enPalabras = (columna: string) => columna.replace(/_/g, ' ');
+
+export type ClaseDeCifra = 'identificador' | 'usd' | 'cop' | 'numero';
+
+/**
+ * Con qué formato se escribe un número de esa columna. Es la regla gemela de
+ * `backend/ia/forma.clase_de_cifra`: la tabla, el Excel y el resumen automático
+ * tienen que decir la misma unidad sobre el mismo número.
+ */
+export function claseDeCifra(columna: string): ClaseDeCifra {
+  if (PALABRAS_IDENTIFICADOR.some((palabra) => columna.includes(palabra))) return 'identificador';
+  if (DOLARES.test(enPalabras(columna))) return 'usd';
+  if (PESOS.test(enPalabras(columna))) return 'cop';
+  return 'numero';
+}
+
+export const esIdentificador = (columna: string) => claseDeCifra(columna) === 'identificador';
+export const esMonetaria = (columna: string) => claseDeCifra(columna) === 'usd' || claseDeCifra(columna) === 'cop';
 export const esNumericaVisual = (columna: string, valor: unknown) => typeof valor === 'number' && !esIdentificador(columna);
 
 export function formatearValor(valor: unknown, columna: string): string {
@@ -17,9 +43,10 @@ export function formatearValor(valor: unknown, columna: string): string {
   // Una columna booleana de Snowflake se lee como el resto de las de sí/no.
   if (typeof valor === 'boolean') return valor ? 'Sí' : 'No';
   if (typeof valor === 'number') {
-    if (esIdentificador(columna)) return String(valor);
-    if (columna.includes('FOB USD')) return `USD ${decimal2.format(valor)}`;
-    if (columna.includes('(COP)')) return `$ ${entero.format(valor)}`;
+    const clase = claseDeCifra(columna);
+    if (clase === 'identificador') return String(valor);
+    if (clase === 'usd') return `USD ${decimal2.format(valor)}`;
+    if (clase === 'cop') return `$ ${entero.format(valor)}`;
     if (columna === 'Antigüedad de la empresa (años)') return decimal1.format(valor);
     if (columna.includes('Índice')) return decimal2.format(valor);
     if (columna.includes('Distancia')) return valor.toFixed(4).replace('.', ',');
@@ -46,9 +73,10 @@ export function abreviar(valor: number, estilo: 'M' | 'millones' = 'M'): string 
 
 /** Versión corta para tarjetas y cifras destacadas. */
 export function formatearCompacto(valor: unknown, columna: string): string {
-  if (typeof valor !== 'number' || esIdentificador(columna)) return formatearValor(valor, columna);
-  if (columna.includes('FOB USD')) return valor === 0 ? 'USD 0' : `USD ${abreviar(valor)}`;
-  if (columna.includes('(COP)')) return `$ ${abreviar(valor, 'millones')}`;
+  if (typeof valor !== 'number') return formatearValor(valor, columna);
+  const clase = claseDeCifra(columna);
+  if (clase === 'usd') return valor === 0 ? 'USD 0' : `USD ${abreviar(valor)}`;
+  if (clase === 'cop') return `$ ${abreviar(valor, 'millones')}`;
   return formatearValor(valor, columna);
 }
 

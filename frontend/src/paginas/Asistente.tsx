@@ -53,7 +53,7 @@ const CLAVE_HILO = 'tejido.asistente.hilo';
 
 /** Mientras se redacta, la respuesta viaja sin texto ni metadatos definitivos. */
 const META_PENDIENTE: MetaIA = {
-  modelo: '', degradado: false, motivo_degradacion: '', cifras_verificadas: true, forma_redaccion: '',
+  modelo: '', degradado: false, motivo_degradacion: '', detalle_degradacion: '', cifras_verificadas: true, forma_redaccion: '',
   ms_interpretacion: 0, ms_consulta: 0, ms_correccion: 0, ms_redaccion: 0, ms_total: 0,
   intentos_sql: 0, analyst_request_id: '', version: '', vista_semantica: '',
 };
@@ -71,7 +71,12 @@ const MOTIVOS: Record<string, { sello: string; explicacion: string }> = {
   redaccion_fallo: {
     sello: 'Resumen automático de los datos: la redacción con IA no estuvo disponible',
     explicacion:
-      'La función de redacción de Snowflake (Cortex COMPLETE) no respondió. La tabla y la consulta son exactas; sólo falta el texto escrito. Quien administra el despliegue puede ver la causa en la página /estado, paso «Cortex COMPLETE».',
+      'La función de redacción de Snowflake (Cortex COMPLETE) no respondió. La tabla y la consulta son exactas; sólo falta el texto escrito. La causa exacta aparece abajo y también en la página /estado, paso «Cortex COMPLETE».',
+  },
+  redaccion_pausada: {
+    sello: 'Resumen automático de los datos: la redacción con IA está en pausa',
+    explicacion:
+      'La redacción falló varias veces seguidas, así que el asistente dejó de esperarla: cada respuesta llega ahora en cuanto Snowflake devuelve la tabla, en vez de tardar unos veinte segundos más para volver a fallar. Se reintenta sola pasados unos minutos. La causa del último fallo aparece abajo.',
   },
   respuesta_vacia: {
     sello: 'Resumen automático de los datos: la redacción con IA llegó vacía',
@@ -548,10 +553,15 @@ function Respuesta({
         {respuesta.texto && !redactando && <Pastilla>{segundos(meta.ms_total)} s</Pastilla>}
       </div>
 
-      {meta.degradado && motivo && (
+      {meta.degradado && (motivo || meta.detalle_degradacion) && (
         <details className="asistente__motivo">
           <summary>¿Por qué?</summary>
-          <p>{motivo.explicacion}</p>
+          {motivo && <p>{motivo.explicacion}</p>}
+          {meta.detalle_degradacion && (
+            <p className="asistente__causa">
+              <span className="asistente__causa-etiqueta">Lo que respondió Snowflake:</span> {meta.detalle_degradacion}
+            </p>
+          )}
         </details>
       )}
 

@@ -97,16 +97,20 @@ administrador, ejecute en este orden:
 
 1. Abra `https://tejidoempresarialasistente-production.up.railway.app/estado` y
    pulse **Ejecutar diagnóstico**. Los pasos `vista_semantica`,
-   `tabla_asistente_log` y `cortex_complete` deben quedar en verde. Si
-   `cortex_complete` falla, el texto del paso dice si es un permiso, un modelo
-   no disponible o una firma distinta; §5 dice qué hacer.
-2. Abra `/asistente` y pulse la primera pregunta sugerida, **«¿Cuántas empresas
+   `tabla_asistente_log` y `cortex_region` deben quedar en verde.
+2. Pulse después **Probar la redacción con IA**. Es un botón aparte porque es
+   el único paso que gasta créditos de IA: prueba varios modelos y dice cuál
+   responde en su cuenta. Copie ese nombre a `SF_CORTEX_MODEL` en Railway. Si
+   **ninguno** responde, el paso `cortex_region` explica por qué: la región de
+   la cuenta no aloja modelos de generación y hay que habilitar la inferencia
+   entre regiones (§5).
+3. Abra `/asistente` y pulse la primera pregunta sugerida, **«¿Cuántas empresas
    hay por departamento y tamaño?»**. En menos de 15 s debe ver la tabla; en
    unos segundos más, el texto con la pastilla verde.
-3. Pulse «Ver gráfica»: barras apiladas por departamento y tamaño.
-4. Escriba «Lístame las pymes de Agroalimentos en Antioquia que exportan, con
+4. Pulse «Ver gráfica»: barras apiladas por departamento y tamaño.
+5. Escriba «Lístame las pymes de Agroalimentos en Antioquia que exportan, con
    NIT» y descargue el listado con formato estándar: cuatro hojas.
-5. En Snowsight:
+6. En Snowsight:
    `SELECT * FROM APP_SEGMENTACION_EXPORTACIONES.SEGUIMIENTO.ASISTENTE_CONSULTAS ORDER BY FECHA_HORA DESC LIMIT 5;`
    debe mostrar sus preguntas con estado y tiempos.
 
@@ -119,7 +123,9 @@ administrador, ejecute en este orden:
 | «El rol no tiene permiso para usar Cortex (403)» | Falta el primer `GRANT`. | Ejecute `snowflake/01_permisos_asistente.sql`. |
 | «No se encontró la vista semántica (404)» | La vista no está desplegada. | Despliéguela con el YAML (`snowflake/LEEME.md`). |
 | «Snowflake rechazó las credenciales (401)» | `SF_USER` no es el dueño de la llave pública. | Revise `SF_USER`; mismo diagnóstico que `/estado`. |
-| Pastilla ámbar «la redacción con IA no estuvo disponible» en todas las respuestas | Cortex COMPLETE falla con ese modelo. | Abra `/estado` → paso `cortex_complete`. Si dice *Insufficient privileges*: paso 1 de §3. Si dice que el modelo no existe o no está en la región: cambie `SF_CORTEX_MODEL` (mida con `snowflake/02_comparar_modelos.sql`). |
+| Pastilla ámbar «la redacción con IA no estuvo disponible» en todas las respuestas | Cortex COMPLETE falla. **La causa más frecuente es que el nombre del modelo caducó**: los de Snowflake se retiran, y con un nombre inexistente falla cada pregunta. | La respuesta ya trae la causa: despliegue **«¿Por qué?»** debajo del texto. Y en `/estado` → **«Probar la redacción con IA»**: dice qué modelos responden. Copie uno a `SF_CORTEX_MODEL`. Si dice *Insufficient privileges*, ejecute el paso 1 de §3. |
+| «Probar la redacción con IA» dice que **ningún** modelo responde | La región de la cuenta no aloja modelos de generación de texto. | Con `ACCOUNTADMIN` en Snowsight: `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` (o `'AWS_US'` si los datos deben quedarse en Estados Unidos). El paso `cortex_region` del diagnóstico muestra la región y el valor actual. |
+| «La redacción con IA está en pausa tras varios fallos» | El aplicativo falló tres veces seguidas al redactar y dejó de intentarlo por diez minutos, para no hacerle esperar veinte segundos por un error ya conocido. | Corrija la causa (las dos filas anteriores) y espere diez minutos, o redespliegue el servicio. Las respuestas mientras tanto son correctas: cambia el texto, no las cifras. Se ajusta con `IA_REDACCION_FALLOS_PARA_PAUSA` e `IA_REDACCION_PAUSA`. |
 | «La consulta generada no pasó la revisión de seguridad» | El modelo propuso algo que no es una consulta de lectura sobre los esquemas permitidos. | Reformule la pregunta. El aplicativo hizo lo correcto. |
 | «El resultado ya no está disponible en el servidor» al descargar | Pasaron más de 30 minutos, o el servicio se redesplegó. | Vuelva a preguntar y descargue de nuevo. |
 | Interpretar tarda más de 40 s | Pregunta libre y ambigua, o Analyst con carga. | Use una pregunta sugerida o sea más concreto. `docs/METRICAS.md` dice cómo detectar las preguntas repetidas que conviene volver verificadas. |
@@ -141,6 +147,12 @@ Cortex COMPLETE (por fichas) y una consulta al warehouse. Las sentencias para
 ver el consumo real están en `snowflake/02_comparar_modelos.sql`, sección 3, y
 las de uso en `docs/METRICAS.md`.
 
+**El servicio encendido en Railway no consume créditos de Snowflake.** Los
+consumen las consultas, y quien las dispara son las personas que abren el
+aplicativo. Lo que más pesa en la factura es el `AUTO_SUSPEND` del warehouse,
+que se configura en Snowflake y no aquí. `docs/COSTOS.md` lo explica con los
+guiones listos para pegar en Snowsight, incluido el tope de gasto.
+
 ---
 
 ## 8 · El modelo de redacción y los tiempos
@@ -155,13 +167,16 @@ las de uso en `docs/METRICAS.md`.
 | Escribir las 2 a 5 frases del resumen (máximo 90 palabras) | El modelo de `SF_CORTEX_MODEL` | **Sí** |
 
 **Cambiar el modelo no cambia la exactitud de las cifras**: esa la garantiza el
-código. Cambia cuánto tarda el resumen y cuánto cuesta. Mida en su cuenta con
-`snowflake/02_comparar_modelos.sql` antes de decidir.
+código. Cambia cuánto tarda el resumen, cuánto cuesta y, sobre todo, si hay
+resumen: **los nombres de modelo de Cortex caducan**. El valor por defecto es
+`claude-haiku-4-5`; para saber qué responde hoy en su cuenta, use `/estado` →
+«Probar la redacción con IA», y para comparar velocidad y estilo,
+`snowflake/02_comparar_modelos.sql`.
 
 ### De dónde salen los segundos
 
 ```
-Interpretar la pregunta 6,2 s · consultar la base 4,1 s · corregir la consulta 12,0 s (2 intentos) · redactar 8,7 s (claude-3-5-sonnet)
+Interpretar la pregunta 6,2 s · consultar la base 4,1 s · corregir la consulta 12,0 s (2 intentos) · redactar 3,4 s (claude-haiku-4-5)
 ```
 
 | Si lo grande es… | Suele ser porque… | Qué hacer |
@@ -170,7 +185,8 @@ Interpretar la pregunta 6,2 s · consultar la base 4,1 s · corregir la consulta
 | **Corregir** | La primera SQL falló en Snowflake y se pidió una corrección (aparece sólo entonces). | Nada; es el mecanismo normal. Si se repite con una misma pregunta, revise el modelo semántico. |
 | **Consultar** | Warehouse suspendido (5 a 10 s al encender). | Subir `AUTO_SUSPEND` cuesta créditos de inactividad; suele no valer la pena. |
 | **Redactar** | Modelo grande o tabla ancha. | Modelo más rápido (`SF_CORTEX_MODEL`). La tabla del prompt ya está acotada a 20 filas y 6.000 caracteres; la salida a 320 fichas / 90 palabras. |
-| **Redactar 2 s y pastilla ámbar** | La redacción falló y el aplicativo lo dijo en vez de reintentar. | Ver §5. |
+| **Redactar ~20 s y pastilla ámbar en todas las respuestas** | El nombre del modelo caducó, o la región no tiene modelos de generación. La llamada agota su plazo y el aplicativo entrega el resumen automático. | Ver §5. Tras tres fallos seguidos el aplicativo deja de esperar durante diez minutos, así que las respuestas vuelven a ser rápidas aunque el texto siga siendo el automático. |
+| **Redactar 0 s y pastilla ámbar** | La redacción está en pausa por los fallos anteriores. | Ver §5. |
 
 Desde 3.5.0 la sesión con Snowflake se abre al arrancar el servicio, así que la
 primera pregunta ya no paga la conexión.

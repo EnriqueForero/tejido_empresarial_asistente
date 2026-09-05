@@ -162,6 +162,229 @@ def test_un_resumen_de_respaldo_conserva_su_causa_y_no_se_revisa_dos_veces() -> 
     assert telemetria.registros[-1]["motivo_degradacion"] == "redaccion_fallo"
 
 
+# ── La redacción no hace esperar cuando lleva rato fallando ───────────────
+
+
+def test_tras_varios_fallos_seguidos_la_redaccion_deja_de_llamarse() -> None:
+    """Un fallo cuesta el tiempo completo de la llamada (~20 s en producción) y su
+    causa casi nunca es pasajera: tras tres seguidos se deja de llamar."""
+    from backend.ia.redactor import Interruptor, redactar
+
+    reloj = [1000.0]
+    interruptor = Interruptor(fallos_para_pausa=3, pausa=600, reloj=lambda: reloj[0])
+    llamadas: list[str] = []
+
+    def sesion(consulta: str, parametros: list) -> list:
+        llamadas.append(consulta)
+        raise RuntimeError("100357 (P0000): Insufficient privileges to use model")
+
+    def pedir():
+        return redactar(sesion, "¿Cuántas?", ["A"], [["x"]], 1, False, "m", "id", interruptor)
+
+    for _ in range(3):
+        assert pedir().motivo == "redaccion_fallo"
+    assert len(llamadas) == 3
+
+    # La cuarta no llega a Snowflake: responde de inmediato y explica por qué.
+    pausada = pedir()
+    assert len(llamadas) == 3
+    assert pausada.motivo == "redaccion_pausada"
+    assert "privileges" in pausada.error and "pausa" in pausada.error
+    assert "x" in pausada.texto  # el resumen con los datos sigue saliendo
+
+    # Pasada la pausa se vuelve a intentar; un acierto reinicia la cuenta.
+    reloj[0] += 601
+    llamadas.clear()
+
+    def sesion_buena(consulta: str, parametros: list) -> list:
+        llamadas.append(consulta)
+        return [["Antioquia concentra 5 empresas."]]
+
+    buena = redactar(sesion_buena, "¿Cuántas?", ["A"], [["x"]], 1, False, "m", "id", interruptor)
+    assert buena.degradado is False and len(llamadas) == 1
+    assert interruptor.fallos_seguidos == 0
+
+
+def test_la_causa_del_fallo_llega_a_la_pantalla() -> None:
+    """Quien mira la respuesta no debería tener que abrir /estado para saber qué pasó."""
+    servicio = ServicioFalso(redaccion=RuntimeError("100357 (P0000): Insufficient privileges to use model 'x'"))
+    from backend.ia.redactor import INTERRUPTOR
+
+    INTERRUPTOR.reiniciar()
+    eventos, _, _ = correr(servicio, AnalystFalso(sql=f"SELECT DEPARTAMENTO_EMP FROM {TABLA}"))
+    INTERRUPTOR.reiniciar()
+    meta = eventos[-1]["meta"]
+    assert meta["motivo_degradacion"] == "redaccion_fallo"
+    assert "Insufficient privileges" in meta["detalle_degradacion"]
+    assert len(meta["detalle_degradacion"]) <= 300
+
+
+# ── El diagnóstico de la redacción: decir cuál poner, no sólo «falla» ─────
+
+
+def _sesion_que_falla(mensaje: str, exitos: tuple[str, ...] = ()) -> tuple[object, list[str]]:
+    """Sesión falsa que sólo responde a los modelos de `exitos`; anota cada llamada."""
+    llamadas: list[str] = []
+
+    def sesion(sql: str, parametros: list[object] | None = None) -> list[list[object]]:
+        modelo = str((parametros or [""])[0])
+        forma = "opciones" if "PARSE_JSON" in sql else "simple"
+        llamadas.append(f"{modelo}:{forma}")
+        if modelo in exitos:
+            return [["OK"]]
+        raise RuntimeError(mensaje)
+
+    return sesion, llamadas
+
+
+def test_el_sondeo_dice_que_modelo_poner_cuando_el_configurado_no_existe() -> None:
+    import pytest
+
+    from backend.ia.redactor import sondear_complete
+
+    sesion, llamadas = _sesion_que_falla(
+        "100357 (P0000): unknown model 'claude-3-5-sonnet'", exitos=("llama3.1-8b",)
+    )
+    with pytest.raises(RuntimeError) as fallo:
+        sondear_complete(sesion, "claude-3-5-sonnet", candidatos=("claude-haiku-4-5", "llama3.1-8b"))
+    assert "SF_CORTEX_MODEL = llama3.1-8b" in str(fallo.value)
+    # Un modelo que no existe no es un error de firma: cuesta UNA llamada, no dos.
+    assert llamadas == ["claude-3-5-sonnet:opciones", "claude-haiku-4-5:opciones", "llama3.1-8b:opciones"]
+
+
+def test_el_sondeo_nombra_las_tres_causas_cuando_ningun_modelo_responde() -> None:
+    import pytest
+
+    from backend.ia.redactor import sondear_complete
+
+    sesion, _ = _sesion_que_falla("Insufficient privileges to operate on model")
+    with pytest.raises(RuntimeError) as fallo:
+        sondear_complete(sesion, "claude-haiku-4-5", candidatos=("llama3.1-8b",))
+    texto = str(fallo.value)
+    assert "CORTEX_USER" in texto and "CORTEX_ENABLED_CROSS_REGION" in texto
+    assert "El asistente sigue funcionando" in texto
+
+
+def test_el_sondeo_no_deja_al_usuario_esperando_minutos() -> None:
+    """Cada llamada muerta cuesta ~20 s: el paso se corta y dice qué quedó sin probar."""
+    import pytest
+
+    from backend.ia.redactor import sondear_complete
+
+    reloj = [0.0]
+    sesion_base, llamadas = _sesion_que_falla("unknown model")
+
+    def sesion(sql: str, parametros: list[object] | None = None) -> list[list[object]]:
+        reloj[0] += 20.5
+        return sesion_base(sql, parametros)
+
+    with pytest.raises(RuntimeError) as fallo:
+        sondear_complete(
+            sesion,
+            "claude-3-5-sonnet",
+            candidatos=("a", "b", "c", "d", "e"),
+            reloj=lambda: reloj[0],
+            presupuesto=45.0,
+        )
+    assert "No dio tiempo a probar c, d, e" in str(fallo.value)
+    assert len(llamadas) == 3  # el configurado y dos candidatos, no seis
+
+
+# ── La gráfica y el Excel no pueden contradecir a la tabla ────────────────
+
+
+def test_un_promedio_no_se_dibuja_redondeado_a_entero() -> None:
+    """En producción la tabla decía 19,89 y la gráfica dibujaba «20»."""
+    from backend.ia import graficos
+
+    espec = graficos.sugerir(
+        ["Promedio pobreza municipio", "¿La empresa ha exportado?"], [[19.891126311511194, "No"], [12.52, "Sí"]]
+    )
+    assert espec is not None and espec["formato"] in {"porcentaje", "decimal"}
+    assert espec["series"][0]["valores"] == [19.891126311511194, 12.52]
+    # Un conteo sigue siendo entero, y una cifra de exportaciones sigue en dólares.
+    assert graficos.sugerir(["DEPARTAMENTO", "EMPRESAS"], [["Antioquia", 231544], ["Caldas", 45912]])["formato"] == "entero"
+    assert graficos.sugerir(["SECTOR", "EXPO_2025"], [["Café", 1234.5], ["Banano", 987.6]])["formato"] == "usd"
+
+
+def test_el_excel_del_asistente_distingue_dolares_de_pesos() -> None:
+    from backend.ia.exportadores import _clase_numerica
+
+    assert _clase_numerica("Total expo 5 anos USD") == "usd"
+    assert _clase_numerica("Exportaciones totales de la empresa 2021 (FOB USD)") == "usd"
+    assert _clase_numerica("total_expo_5_anos_usd") == "usd"
+    assert _clase_numerica("Ingresos operacionales (COP)") == "cop"
+    assert _clase_numerica("Empleados") == "numero"
+    assert _clase_numerica("Promedio pobreza municipio") == "numero"
+
+
+# ── El resumen automático se lee bien: es lo que sale cuando la IA no está ─
+
+
+def test_el_resumen_automatico_no_afirma_un_maximo_sobre_un_resultado_recortado() -> None:
+    """La misma regla que se le exige al modelo: sin resultado completo, no hay superlativo."""
+    from backend.ia.redactor import resumen_determinista
+
+    columnas = ["NIT", "Razón social", "Total expo 5 anos USD"]
+    filas = [["899999068", "ECOPETROL S A", 52158504845.93], ["800021308", "DRUMMOND LTD", 15222314753.65]]
+
+    completo = resumen_determinista(columnas, filas, 2, False)
+    assert "El valor más alto" in completo
+
+    recortado = resumen_determinista(columnas, filas, 5000, True)
+    assert "El valor más alto" not in recortado
+    assert "se recortó" in recortado
+
+
+def test_el_resumen_automatico_mide_por_la_cifra_y_no_por_el_identificador() -> None:
+    """El «valor más alto» de una tabla de empresas es la exportación, nunca el NIT."""
+    from backend.ia.redactor import resumen_determinista
+
+    texto = resumen_determinista(
+        ["NIT", "Razón social", "Total expo 5 anos USD"],
+        [[899999068, "ECOPETROL S A", 52158504845.93], [800021308, "DRUMMOND LTD", 15222314753.65]],
+        2,
+        False,
+    )
+    assert "El valor más alto de «Total expo 5 anos USD»" in texto
+    # El NIT se escribe como identificador: sin separador de miles y sin unidad.
+    assert "899999068" in texto and "899.999.068" not in texto
+    # Y la cifra sí lleva su unidad, igual que se le exige al modelo.
+    assert "USD 52.158.504.845,93" in texto
+
+
+def test_el_resumen_automatico_no_promete_una_tabla_que_no_esta_completa() -> None:
+    from backend.ia.redactor import resumen_determinista
+
+    corto = resumen_determinista(["DEPARTAMENTO", "EMPRESAS"], [["Antioquia", 231544]], 1, False)
+    assert "La tabla de abajo tiene el detalle completo." in corto
+    assert corto.startswith("La consulta devolvió 1 fila.")
+
+    largo = resumen_determinista(["NIT", "Razón social"], [["8999", "ECOPETROL S A"]], 4200, False)
+    assert "La tabla de abajo tiene el detalle completo." not in largo
+    assert "primeras 500 filas" in largo and "descarga" in largo
+
+
+def test_el_resumen_automatico_da_formato_a_las_cifras_y_enumera_un_cruce_corto() -> None:
+    from backend.ia.redactor import resumen_determinista
+
+    texto = resumen_determinista(
+        ["Promedio pobreza municipio", "¿La empresa ha exportado?"], [[19.891126311511194, "No"], [12.52, "Sí"]], 2, False
+    )
+    assert "19,89" in texto and "12,52" in texto and "(No)" in texto and "(Sí)" in texto
+    assert "19.891126311511194" not in texto  # nunca el número crudo
+
+    listado = resumen_determinista(
+        ["NIT", "Razón social", "Total expo 5 anos USD"],
+        [["899999068", "ECOPETROL S A", 52158504845.93], ["800021308", "DRUMMOND LTD", 15222314753.65]],
+        100,
+        False,
+    )
+    assert "52.158.504.845,93" in listado
+    # La empresa se nombra por su razón social, no por su NIT.
+    assert "en ECOPETROL S A" in listado
+
+
 # ── Descargas y diagnóstico ───────────────────────────────────────────────
 
 

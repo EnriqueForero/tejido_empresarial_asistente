@@ -32,7 +32,7 @@ def _bool_env(nombre: str, por_defecto: bool) -> bool:
         return por_defecto
     return valor.strip().lower() in {"1", "true", "yes", "on"}
 
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.5.1"
 APP_TITLE = "Tejido Empresarial · ProColombia"
 
 # ==============================================================================
@@ -298,8 +298,12 @@ SEMANTIC_VIEW = os.getenv(
     "APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION.TEJIDO_EMPRESARIAL_SEGMENTACION",
 )
 
-#: Modelo de redacción. Los modelos de Cortex caducan; por eso es una variable.
-CORTEX_MODEL = os.getenv("SF_CORTEX_MODEL", "claude-3-5-sonnet")
+#: Modelo que redacta las 2 a 5 frases del resumen. Los nombres de Cortex
+#: caducan: `claude-3-5-sonnet`, el que traía el aplicativo, fue retirado, y con un
+#: nombre inexistente la redacción falla en cada pregunta. Si el diagnóstico
+#: («Probar la redacción con IA» en /estado) dice que éste no responde, indica
+#: cuáles sí: se cambia aquí con SF_CORTEX_MODEL, sin tocar el código.
+CORTEX_MODEL = os.getenv("SF_CORTEX_MODEL", "claude-haiku-4-5")
 
 #: Esquemas sobre los que se acepta ejecutar la SQL generada. Cualquier otro se
 #: rechaza antes de tocar la base, aunque el modelo lo proponga.
@@ -326,6 +330,12 @@ IA_HISTORY_TURNS = _int_env("IA_HISTORY_TURNS", 4)
 #: formato estándar e historial real): cuántos y por cuánto tiempo (segundos).
 IA_RESULT_CAPACITY = _int_env("IA_RESULT_CAPACITY", 50)
 IA_RESULT_TTL = _int_env("IA_RESULT_TTL", 1800)
+#: Un fallo de la redacción cuesta el tiempo completo de la llamada y su causa
+#: casi nunca es pasajera. Tras estos fallos seguidos se deja de llamar a
+#: Cortex COMPLETE durante `IA_REDACCION_PAUSA` segundos: la respuesta sale en
+#: cuanto Snowflake devuelve la tabla y la pantalla explica por qué.
+IA_REDACCION_FALLOS_PARA_PAUSA = _int_env("IA_REDACCION_FALLOS_PARA_PAUSA", 3)
+IA_REDACCION_PAUSA = _int_env("IA_REDACCION_PAUSA", 600)
 
 #: NIT reales de ejemplo. Alimentan los chips de la consulta directa, el
 #: marcador del lote, la pregunta sugerida y los `sample_values` del modelo

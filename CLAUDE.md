@@ -11,7 +11,7 @@ Guidance for Claude Code when working in this repository.
 1. **Snowflake is the only connector.** No external LLM provider, no extra secret. Cortex Analyst → SQL; `SNOWFLAKE.CORTEX.COMPLETE` → prose. (D-01)
 2. **The model proposes, the code disposes.** Every generated SQL passes `backend/ia/guardas.validar_sql`; every prose passes `verificar_cifras`. Both stay in the path of every answer. (D-03)
 3. **The AI warning (`IA_ADVERTENCIA`) appears on screen and in every exported file** (Excel, PPTX, standard listing).
-4. **A failure is shown, not retried.** One COMPLETE call per answer (the simple form only after a signature/compile error); session reopened only on session/network errors. Degradation carries `motivo_degradacion` and reaches telemetry. (D-10)
+4. **A failure is shown, not retried.** One COMPLETE call per answer (the simple form only after a signature/compile error); session reopened only on session/network errors. Degradation carries `motivo_degradacion`, a redacted `detalle_degradacion` for the screen, and reaches telemetry. (D-10) After 3 consecutive failures the redaction circuit opens for 10 min — motive `redaccion_pausada` (D-13). `cortex_complete` is opt-in (`?cortex=true`): it is the only code path that spends AI credits unasked (D-14).
 5. **Rows never persist in the browser or in telemetry.** They may contain contact data. The server keeps them in memory by `consulta_id` (D-05); `sessionStorage` holds the thread skeleton only.
 6. **Downloads come from the server**, by `consulta_id`, with all rows. Never accept a table from the client for export.
 7. **One company exporter.** Listings — from `/consultar` or from the assistant — go through `backend/exporter.create_export` (5 sheets, NIT as text). (D-04, D-09)
@@ -22,7 +22,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Definition of done
 
-A change is done when: `ruff check backend tests scripts` is clean; `pytest -q` passes (127+); `cd frontend && npm test && npm run build` pass; new behaviour has a test that would fail without it; CHANGELOG has an entry under the version being prepared; if it touched the semantic view, `snowflake/LEEME.md` says it must be redeployed; if it touched env vars, `.env.example`, `RAILWAY_VARIABLES.md` and README agree; user-facing docs use literal URLs and steps a non-expert can follow.
+A change is done when: `ruff check backend tests scripts` is clean; `pytest -q` passes (155+); `cd frontend && npm test && npm run build` pass; new behaviour has a test that would fail without it; CHANGELOG has an entry under the version being prepared; if it touched the semantic view, `snowflake/LEEME.md` says it must be redeployed; if it touched env vars, `.env.example`, `RAILWAY_VARIABLES.md` and README agree; user-facing docs use literal URLs and steps a non-expert can follow.
 
 ## Commands
 
@@ -31,7 +31,7 @@ A change is done when: `ruff check backend tests scripts` is clean; `pytest -q` 
 pip install -r requirements-dev.txt      # local; CI y Colab usan requirements-test.txt
 ruff check backend tests scripts                                    # sintaxis + pyflakes
 APP_DEMO_MODE=true uvicorn backend.main:app --reload --port 8000   # synthetic data, no Snowflake
-pytest -q                                                           # 127 tests
+pytest -q                                                           # 155 tests
 
 # Frontend (Node 22)
 cd frontend && npm ci && npm run dev      # http://localhost:5173, proxies /api → :8000
@@ -93,7 +93,8 @@ frontend/src/
 snowflake/      TEJIDO_EMPRESARIAL_SEGMENTACION.sv.yaml (semantic view: 23 verified queries; CADENA_EXPORTADA),
                 01_permisos (CORTEX_USER + SELECT on the view), 02_comparar_modelos (incl. the options form),
                 03_telemetria_asistente (tables, views, grants), 04_minimo_privilegio (revoke UPDATE/DELETE), LEEME.md.
-docs/           METRICAS.md (ready SQL), DECISIONES.md (D-01…D-12), BITACORA.md, INCIDENTES.md.
+docs/           METRICAS.md (ready SQL), DECISIONES.md (D-01…D-14), BITACORA.md, INCIDENTES.md,
+                COSTOS.md (what burns Snowflake credits; the Railway container does not).
 notebooks/      Colab: ephemeral demo + GitHub publisher (Celda A: repo, required files, build commands; version
                 synced in frontend/package.json and backend/config.py).
 .github/workflows/build.yml   CI: ruff + pytest (demo mode) · vitest + npm run build.
@@ -101,7 +102,7 @@ notebooks/      Colab: ephemeral demo + GitHub publisher (Celda A: repo, require
 
 ## SSE contract (`POST /api/ia/preguntar`)
 
-`etapa {etapa, detalle, ms, sql?}` × n → `resultado {consulta_id, sql, columnas, filas≤500, n_filas, truncado, grafica, mostrar_grafica, es_listado, n_nits, sugerencias, advertencia}` → `final {…same, texto, meta}` — or `error {mensaje}` at any point. Comment lines `: latido` every 10 s. `meta`: modelo, degradado, motivo_degradacion (`redaccion_fallo` | `respuesta_vacia` | `cifras_sin_respaldo` | ''), cifras_verificadas, forma_redaccion, ms_interpretacion, ms_consulta, ms_correccion, ms_redaccion, ms_total, intentos_sql, analyst_request_id, version, vista_semantica. Closing the connection sets the orchestrator's `cancelado` flag (state `detenida`).
+`etapa {etapa, detalle, ms, sql?}` × n → `resultado {consulta_id, sql, columnas, filas≤500, n_filas, truncado, grafica, mostrar_grafica, es_listado, n_nits, sugerencias, advertencia}` → `final {…same, texto, meta}` — or `error {mensaje}` at any point. Comment lines `: latido` every 10 s. `meta`: modelo, degradado, motivo_degradacion (`redaccion_fallo` | `respuesta_vacia` | `cifras_sin_respaldo` | `redaccion_pausada` | ''), detalle_degradacion (redacted cause, shown in «¿Por qué?»), cifras_verificadas, forma_redaccion, ms_interpretacion, ms_consulta, ms_correccion, ms_redaccion, ms_total, intentos_sql, analyst_request_id, version, vista_semantica. Closing the connection sets the orchestrator's `cancelado` flag (state `detenida`).
 
 ## Conventions
 
@@ -114,7 +115,7 @@ notebooks/      Colab: ephemeral demo + GitHub publisher (Celda A: repo, require
 
 ## Troubleshooting a deployment
 
-`/api/health` reports connector presence, version, missing `SF_*` vars and key sources. `/api/diagnostico` (Basic auth, `APP_DIAG_TOKEN` via `X-Diag-Token` header or `?token=`, or APP_ENV=development) runs the full chain — entorno → conector → llave → sesión → tablas → vista_semantica → tabla_asistente_log → cortex_complete — and returns the first failing step, a concrete recommendation and the telemetry counters. `/estado` renders it for non-technical users. See `DIAGNOSTICO_RAILWAY.md`; for the assistant, `ASISTENTE.md` §5; for metrics, `docs/METRICAS.md`.
+`/api/health` reports connector presence, version, missing `SF_*` vars and key sources. `/api/diagnostico` (Basic auth, `APP_DIAG_TOKEN` via `X-Diag-Token` header or `?token=`, or APP_ENV=development) runs the chain — entorno → conector → llave → sesión → tablas → vista_semantica → tabla_asistente_log → cortex_region — and returns the first failing step, a concrete recommendation and the telemetry counters. `/estado` renders it for non-technical users. See `DIAGNOSTICO_RAILWAY.md`; for the assistant, `ASISTENTE.md` §5; for metrics, `docs/METRICAS.md`.
 
 ## Snowflake objects
 

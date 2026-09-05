@@ -29,11 +29,37 @@ _SIGLAS = frozenset({"USD", "COP", "FOB", "NIT", "CIIU", "PDET", "ZOMAC", "HUB",
 #: Proporción mínima de valores con forma de NIT para tratar la columna como tal.
 _PROPORCION_NIT = 0.8
 
+#: Cómo se escribe una cifra según el nombre de su columna. Es la regla gemela de
+#: `frontend/src/formato.ts`: la tabla en pantalla, el Excel y el resumen automático
+#: tienen que decir la misma unidad sobre el mismo número. Se busca sobre el nombre
+#: con los guiones bajos convertidos en espacios, porque para una expresión regular
+#: el guión bajo es parte de la palabra y `expo_2025_usd` no casaría con `\bUSD\b`.
+_DOLARES = re.compile(r"(?<![A-Z])USD(?![A-Z])|FOB", re.IGNORECASE)
+_PESOS = re.compile(r"(?<![A-Z])COP(?![A-Z])", re.IGNORECASE)
+_IDENTIFICADOR = ("NIT", "CODIGO", "DIGITO", "ID")
+
 
 def normalizar(nombre: str) -> str:
     """«Correo electrónico» → «CORREO_ELECTRONICO»: sin tildes, en mayúsculas, con guiones bajos."""
     ascii_ = unicodedata.normalize("NFKD", str(nombre)).encode("ascii", "ignore").decode()
     return re.sub(r"[^A-Za-z0-9]+", "_", ascii_).strip("_").upper()
+
+
+def clase_de_cifra(columna: str) -> str:
+    """«identificador», «usd», «cop» o «numero»: con qué formato se escribe un número.
+
+    Un NIT es un número que no se suma ni lleva separador de miles; unas
+    exportaciones sin su unidad son una cifra ambigua. La decisión se toma una
+    sola vez y la comparten el resumen automático y el Excel del asistente.
+    """
+    if any(clave in normalizar(columna).split("_") for clave in _IDENTIFICADOR):
+        return "identificador"
+    en_palabras = str(columna).replace("_", " ")
+    if _DOLARES.search(en_palabras):
+        return "usd"
+    if _PESOS.search(en_palabras):
+        return "cop"
+    return "numero"
 
 
 def es_columna_contacto(nombre: str) -> bool:

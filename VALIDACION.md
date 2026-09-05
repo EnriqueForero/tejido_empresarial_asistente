@@ -1,10 +1,29 @@
-# Validación · Tejido Empresarial React 3.5.0
+# Validación · Tejido Empresarial React 3.5.1
 
-Fecha: 4 de septiembre de 2026. Alcance: la puesta a punto del asistente
-(Fases 1 a 5 del plan aprobado) sobre la versión 3.4.2 desplegada en
-`https://tejidoempresarialasistente-production.up.railway.app/`.
+Fecha: 5 de septiembre de 2026. Alcance: la corrección de la redacción con IA y
+la respuesta a la pregunta de consumo de créditos, sobre la 3.5.0 publicada en
+`https://tejidoempresarialasistente-production.up.railway.app/`. Al final se
+conserva lo verificado en 3.5.0, que sigue vigente.
 
-## Comprobaciones ejecutadas
+## Comprobaciones de 3.5.1
+
+| Comprobación | Resultado |
+|---|---|
+| `ruff check backend tests scripts` | Sin hallazgos. |
+| `pytest -q` | **161 pruebas en verde** (150 en 3.5.0). Las 11 nuevas están en `test_endurecimiento.py` (28 en total). |
+| `npm test` (vitest) | **10 pruebas en 4 archivos**. Nuevo: `formato.test.ts`, que fija la regla de moneda por nombre de columna. |
+| `npm run build` (tsc + Vite) | Limpio. |
+| El interruptor de la redacción | Tres fallos seguidos abren el circuito; la cuarta pregunta **no** llega a Snowflake y responde con `motivo_degradacion = redaccion_pausada`; un éxito lo reinicia. |
+| La causa llega a la pantalla | Un error de privilegios de Cortex aparece literal en `meta.detalle_degradacion` y se pinta bajo «¿Por qué?». |
+| El sondeo de modelos | Con el configurado inexistente y un candidato vivo, el mensaje dice «Ponga SF_CORTEX_MODEL = llama3.1-8b»; con todos muertos, nombra las tres causas en orden (permiso · región · nombre retirado). |
+| El sondeo no bloquea | Un modelo inexistente tarda ~20 s en fallar: se comprueba que cuesta **una** llamada por modelo y que el paso se corta a los 75 s diciendo qué quedó sin probar. Antes habría tardado más de tres minutos. |
+| El diagnóstico no gasta créditos solo | `/api/diagnostico` sin `cortex=true` no ejecuta ninguna llamada a COMPLETE; el paso nuevo `cortex_region` sólo lee `CURRENT_REGION()` y el parámetro de inferencia entre regiones. |
+| El resumen automático | Cifras en formato de Colombia con su unidad (`USD 52.158.504.845,93`), NIT sin separador de miles, la empresa nombrada por su razón social, sin superlativo cuando el resultado está recortado, y sin prometer una tabla completa cuando pasa de 500 filas. |
+| Gráfica y Excel coherentes con la tabla | Un promedio de 19,89 ya no se dibuja como «20»; las columnas en dólares y en pesos salen con su formato en el Excel del asistente y en la tabla en pantalla. La regla vive en un solo sitio por lado (`backend/ia/forma.clase_de_cifra` y `frontend/src/formato.ts`) y ambas versiones están fijadas con pruebas. |
+| Cuaderno de publicación | Versión 3.5.1 alineada en `backend/config.py`, `frontend/package.json` y el candado de npm; los archivos nuevos (`docs/COSTOS.md`, `frontend/src/formato.ts` y su prueba) están en el pre-flight, y `tests/test_notebook.py` exige ahora **toda** prueba del frontend y **todo** documento de `docs/`, para que no vuelva a olvidarse ninguno. |
+| Pregunta de créditos | Revisión del código, del `Dockerfile` y de `railway.toml`: ninguna ruta consulta Snowflake sin que alguien la pida, salvo la prueba de Cortex del diagnóstico, que pasa a ser bajo demanda. Resultado y guiones en `docs/COSTOS.md`. |
+
+## Comprobaciones de 3.5.0
 
 | Comprobación | Resultado |
 |---|---|

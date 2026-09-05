@@ -20,6 +20,7 @@ from typing import Any
 import xlsxwriter
 
 from backend.config import APP_VERSION, IA_ADVERTENCIA
+from backend.ia.forma import clase_de_cifra
 
 NAVY = "#011627"
 NAVY_2 = "#062B43"
@@ -35,6 +36,9 @@ FONT_DISPLAY = "Jost"
 FONT_BODY = "Maven Pro"
 
 _IDENTIFICADOR = ("NIT", "DIGITO", "DÍGITO", "CODIGO", "CÓDIGO", "COD_", "POSICION", "POSICIÓN", "ID_")
+#: Moneda por el nombre de la columna. El asistente inventa sus alias («Total expo
+#: 5 anos USD»), así que no se puede depender de la etiqueta exacta del glosario.
+#: Sin esto, el libro escribía dólares y pesos con el mismo formato genérico.
 _ANCHO_MIN = 11.0
 _ANCHO_MAX = 52.0
 _MAX_FILAS_EXCEL = 20_000
@@ -43,6 +47,18 @@ _MAX_FILAS_EXCEL = 20_000
 def _es_identificador(columna: str) -> bool:
     arriba = columna.upper()
     return any(termino in arriba for termino in _IDENTIFICADOR)
+
+
+def _clase_numerica(columna: str) -> str:
+    """«usd», «cop» o «numero»: el formato con el que se escribe una cifra.
+
+    La regla es la de `forma.clase_de_cifra`, para que el archivo, la tabla en
+    pantalla y el resumen automático no digan tres cosas distintas del mismo
+    número. Aquí un identificador no es un caso aparte: `_es_identificador` ya
+    lo desvió a texto antes de llegar a este punto.
+    """
+    clase = clase_de_cifra(columna)
+    return clase if clase in ("usd", "cop") else "numero"
 
 
 def _ancho(columna: str, valores: list[Any]) -> float:
@@ -126,6 +142,12 @@ def crear_excel(
         "celda_par": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "valign": "top"}),
         "numero": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "num_format": "#,##0.##"}),
         "numero_par": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "num_format": "#,##0.##"}),
+        # La misma convención que el Excel estándar: FOB USD con dos decimales,
+        # COP sin decimales y en rojo si es negativo.
+        "usd": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "num_format": "#,##0.00;[Red]-#,##0.00"}),
+        "usd_par": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "num_format": "#,##0.00;[Red]-#,##0.00"}),
+        "cop": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "num_format": "#,##0;[Red]-#,##0"}),
+        "cop_par": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "num_format": "#,##0;[Red]-#,##0"}),
         "id": libro.add_format({"font_name": "Consolas", "font_size": 10, "border": 1, "border_color": BORDER, "align": "left"}),
         "id_par": libro.add_format({"font_name": "Consolas", "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "align": "left"}),
     }
@@ -178,7 +200,8 @@ def crear_excel(
                 if _es_identificador(columna):
                     datos.write_string(numero, indice, "" if valor is None else str(valor), formatos["id_par" if par else "id"])
                 elif isinstance(valor, (int, float)) and not isinstance(valor, bool):
-                    datos.write_number(numero, indice, float(valor), formatos["numero_par" if par else "numero"])
+                    clase = _clase_numerica(columna)
+                    datos.write_number(numero, indice, float(valor), formatos[f"{clase}_par" if par else clase])
                 else:
                     datos.write(numero, indice, "" if valor is None else str(valor), formatos["celda_par" if par else "celda"])
         if filas:

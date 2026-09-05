@@ -67,8 +67,15 @@ def test_todo_archivo_exigido_por_el_notebook_existe(config: dict[str, Any]) -> 
 def test_las_pruebas_y_la_configuracion_del_proyecto_estan_en_la_lista(config: dict[str, Any]) -> None:
     """Lo que la integración continua necesita para correr tiene que viajar al repositorio."""
     exigidos = set(config["ARCHIVOS_REQUERIDOS"])
+    pruebas_frontend = {
+        str(ruta.relative_to(RAIZ)).replace("\\", "/")
+        for patron in ("*.test.ts", "*.test.tsx")
+        for ruta in (RAIZ / "frontend" / "src").rglob(patron)
+    }
     imprescindibles = {
         *(f"tests/{ruta.name}" for ruta in sorted((RAIZ / "tests").glob("test_*.py"))),
+        *pruebas_frontend,
+        *(f"docs/{ruta.name}" for ruta in sorted((RAIZ / "docs").glob("*.md"))),
         "tests/conftest.py",
         "tests/dobles.py",
         "pyproject.toml",

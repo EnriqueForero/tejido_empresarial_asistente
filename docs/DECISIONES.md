@@ -18,6 +18,8 @@ ser válida, se marca como sustituida y se enlaza la nueva; no se borra.
 | D-10 | Un fallo se muestra, no se reintenta | Vigente |
 | D-11 | Preguntas sugeridas = preguntas verificadas del modelo semántico | Vigente |
 | D-12 | Documentos operativos en la raíz; documentos de ingeniería en `docs/` | Vigente |
+| D-13 | Un servicio externo que falla siempre deja de llamarse | Vigente |
+| D-14 | El nombre del modelo de redacción es configuración, no código | Vigente |
 
 ---
 
@@ -170,3 +172,35 @@ METRICAS) viven en `docs/`.
 
 **Por qué.** Mover los operativos rompería enlaces, hábitos y la lista de
 archivos del notebook por una ganancia sólo estética.
+
+## D-13 · Un servicio externo que falla siempre deja de llamarse
+
+**Decisión.** La redacción con IA lleva un interruptor: tras
+`IA_REDACCION_FALLOS_PARA_PAUSA` fallos consecutivos (3 por defecto) deja de
+llamarse durante `IA_REDACCION_PAUSA` segundos (600). Durante la pausa la
+respuesta llega con el resumen automático y el motivo `redaccion_pausada`; el
+primer éxito reinicia la cuenta. La pausa nunca impide responder: sólo evita la
+espera.
+
+**Por qué.** D-10 quitó los reintentos dentro de una pregunta, pero no entre
+preguntas: las tres primeras consultas reales pagaron cada una ~20 s de espera
+por el mismo fallo, ya conocido desde la primera. Un servicio que acaba de
+fallar tres veces seguidas va a fallar la cuarta; preguntárselo cuesta tiempo
+del usuario y créditos de warehouse.
+
+**Qué se descartó.** Desactivar la redacción con una variable de entorno (exige
+que alguien se dé cuenta y actúe) y reintentar con otro modelo (multiplicaría el
+gasto justo cuando la cuenta está fallando).
+
+## D-14 · El nombre del modelo de redacción es configuración, no código
+
+**Decisión.** `SF_CORTEX_MODEL` elige el modelo, y el aplicativo trae una prueba
+propia —`/estado` → «Probar la redacción con IA»— que llama a varios candidatos
+y dice cuáles responden en esta cuenta y esta región. El código nunca fija un
+único nombre.
+
+**Por qué.** Los nombres de modelo de Cortex caducan. `claude-3-5-sonnet`, el
+valor por defecto hasta la 3.5.1, fue retirado, y con un nombre inexistente la
+redacción falla en todas las preguntas sin ninguna otra señal. El aplicativo
+tiene que poder decir cuál usar sin desplegar código y sin que el propietario
+consulte documentación externa.

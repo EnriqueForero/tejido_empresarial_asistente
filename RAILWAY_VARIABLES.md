@@ -66,7 +66,7 @@ el aplicativo tolera espacios y saltos.
 | Variable | Valor por defecto | Cuándo tocarla |
 |---|---|---|
 | `SF_SEMANTIC_VIEW` | `APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION.TEJIDO_EMPRESARIAL_SEGMENTACION` | Si despliega el modelo semántico con otro nombre. |
-| `SF_CORTEX_MODEL` | `claude-3-5-sonnet` | Sólo afecta a las 2-5 frases del resumen. Para elegir uno más rápido o barato, mida con `snowflake/02_comparar_modelos.sql`. Si el diagnóstico dice que el modelo no está disponible en la región, cámbielo aquí. |
+| `SF_CORTEX_MODEL` | `claude-haiku-4-5` | Sólo afecta a las 2-5 frases del resumen. **Los nombres de los modelos caducan**: si el asistente entrega el resumen automático en vez del texto escrito, abra `/estado` → «Probar la redacción con IA»: dice si éste responde y, si no, cuáles sí. |
 | `SF_ALLOWED_SCHEMAS` | `APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION,APP_SEGMENTACION_EXPORTACIONES.PUBLIC` | Si el asistente debe poder leer otro esquema. |
 | `SF_HOST` | derivado de `SF_ACCOUNT` | Sólo si su cuenta usa un dominio distinto de `<SF_ACCOUNT>.snowflakecomputing.com`. |
 | `IA_MAX_ROWS` | `5000` | Tope de filas que trae una consulta del asistente. |
@@ -74,6 +74,7 @@ el aplicativo tolera espacios y saltos.
 | `IA_ANALYST_TIMEOUT` | `45` | Segundos de espera a Cortex Analyst por llamada. |
 | `IA_HISTORY_TURNS` | `4` | Mensajes previos que se reenvían a Analyst (4 = dos preguntas anteriores). |
 | `IA_RESULT_CAPACITY` · `IA_RESULT_TTL` | `50` · `1800` | Cuántos resultados conserva el servidor para descargar y por cuántos segundos. |
+| `IA_REDACCION_FALLOS_PARA_PAUSA` · `IA_REDACCION_PAUSA` | `3` · `600` | Tras esos fallos seguidos, la redacción con IA se pausa esos segundos y las respuestas dejan de esperarla. |
 | `NITS_EJEMPLO` | `890903938,811000740,890912462` | NIT de ejemplo en la consulta, el lote y la pregunta sugerida. |
 | `ASISTENTE_LOG_TABLE` · `ASISTENTE_DOWNLOAD_TABLE` | `…SEGUIMIENTO.ASISTENTE_CONSULTAS` · `…SEGUIMIENTO.ASISTENTE_DESCARGAS` | Sólo si crea las tablas de métricas con otro nombre. |
 

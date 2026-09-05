@@ -77,7 +77,7 @@ def health(request: FastAPIRequest, deep: bool = False) -> dict[str, Any]:
 
 
 @router.get("/api/diagnostico")
-def diagnostico(request: FastAPIRequest, token: str = "") -> dict[str, Any]:
+def diagnostico(request: FastAPIRequest, token: str = "", cortex: bool = False) -> dict[str, Any]:
     """Revisa paso a paso entorno → conector → llave → sesión → tablas → asistente.
 
     Devuelve el error real de cada paso, sin secretos. Para que no quede abierto
@@ -111,7 +111,7 @@ def diagnostico(request: FastAPIRequest, token: str = "") -> dict[str, Any]:
             "pasos": [],
         }
 
-    pasos = comun.snowflake.diagnostico()
+    pasos = comun.snowflake.diagnostico(probar_cortex=cortex)
     fallo = next((paso for paso in pasos if not paso["ok"]), None)
     if fallo:
         logger.error("Diagnóstico: falló el paso '%s' — %s", fallo["paso"], fallo.get("error"))
@@ -159,6 +159,8 @@ def sugerencia(fallo: dict[str, Any] | None) -> str:
                            "(GRANT SELECT ON SEMANTIC VIEW …) o revise que SF_SEMANTIC_VIEW tenga el nombre completo.",
         "tabla_asistente_log": "Sólo afecta las métricas del asistente; las respuestas funcionan igual. Ejecute "
                                "snowflake/03_telemetria_asistente.sql para crear las tablas y conceder INSERT.",
+        "cortex_region": "Sólo informativo: dice en qué región está la cuenta y si tiene habilitada la inferencia "
+                         "entre regiones, que es lo que permite usar modelos de Cortex alojados en otra región.",
         "cortex_complete": "La redacción con IA no responde con este modelo: el asistente entrega el resumen automático "
                            "de los datos. Lea el error del paso: si habla de privilegios, ejecute el GRANT de "
                            "SNOWFLAKE.CORTEX_USER; si dice que el modelo no existe o no está disponible en la región, "

@@ -48,8 +48,17 @@ export const obtenerMetadatos = () => json<Metadatos>('/api/metadata');
 export const obtenerSalud = () => json<Salud>('/api/health');
 /** Prueba real contra Snowflake: puede tardar unos segundos. */
 export const probarConexion = () => json<Salud>('/api/health?deep=true');
-export const obtenerDiagnostico = (token = '') =>
-  json<Diagnostico>(`/api/diagnostico${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+/**
+ * Diagnóstico paso a paso. `cortex` incluye la prueba de la redacción con IA,
+ * que va aparte porque es el único paso que gasta créditos de Cortex.
+ */
+export const obtenerDiagnostico = (token = '', cortex = false) => {
+  const parametros = new URLSearchParams();
+  if (token) parametros.set('token', token);
+  if (cortex) parametros.set('cortex', '1');
+  const consulta = parametros.toString();
+  return json<Diagnostico>(`/api/diagnostico${consulta ? `?${consulta}` : ''}`);
+};
 export const obtenerGlosario = () => json<RespuestaGlosario>('/api/glossary');
 export const obtenerFicha = (nit: string, signal?: AbortSignal) => json<Ficha>(`/api/companies/${encodeURIComponent(nit)}`, { signal });
 
