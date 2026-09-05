@@ -298,17 +298,37 @@ class Orquestador:
             # 4 · Forma del resultado --------------------------------------
             columnas_tecnicas = [str(columna) for columna in marco.columns]
             filas = [[_valor(dato) for dato in fila] for fila in marco.itertuples(index=False, name=None)]
-            if not EXPORT_INCLUDE_CONTACT_FIELDS:
-                # La misma regla que gobierna la descarga estándar: si el
-                # despliegue retira el contacto, el asistente tampoco lo muestra.
+            nota = ""
+            # El contacto sale sólo si la pregunta lo pidió, o no sale. Son dos
+            # reglas distintas: `EXPORT_INCLUDE_CONTACT_FIELDS` es la decisión del
+            # despliegue, y `pide_contacto` la de quien pregunta. El modelo
+            # semántico ya se lo indica a Analyst, pero una instrucción no es una
+            # garantía: en producción una pregunta de prospección devolvió el
+            # correo y el teléfono de cien empresas sin haberlos pedido, porque la
+            # cuenta tenía desplegada una versión anterior del modelo. D-03: el
+            # modelo propone, el código dispone.
+            if not EXPORT_INCLUDE_CONTACT_FIELDS or not forma.pide_contacto(pregunta):
                 conservar = [i for i, columna in enumerate(columnas_tecnicas) if not forma.es_columna_contacto(columna)]
-                if len(conservar) != len(columnas_tecnicas):
+                retiradas = [columnas_tecnicas[i] for i in range(len(columnas_tecnicas)) if i not in set(conservar)]
+                if retiradas:
                     columnas_tecnicas = [columnas_tecnicas[i] for i in conservar]
                     filas = [[fila[i] for i in conservar] for fila in filas]
+                    logger.info("[%s] Se retiraron columnas de contacto no solicitadas: %s", consulta_id, retiradas)
+                    if EXPORT_INCLUDE_CONTACT_FIELDS:
+                        legibles = ", ".join(forma.etiqueta(columna) for columna in retiradas)
+                        nota = (
+                            f"Se retiraron del resultado columnas de contacto que la pregunta no pidió ({legibles}). "
+                            "Para incluirlas, pídalas expresamente: «…con NIT y correo»."
+                        )
             columnas = forma.columnas_legibles(columnas_tecnicas)
             n_filas = len(filas)
             truncado = n_filas >= IA_MAX_ROWS
             nits = forma.nits_del_resultado(columnas_tecnicas, filas)
+            # El resumen construido con la propia tabla no llama a nadie: se
+            # escribe aquí, viaja con el resultado y queda guardado para las
+            # descargas. La redacción con IA lo sustituye después, si llega.
+            # Medido en producción: respuesta completa a los 7,8 s, no a los 29,1 s.
+            texto_provisional = resumen_determinista(columnas, filas, n_filas, truncado)
             grafica = graficos.sugerir(columnas, filas)
             # La gráfica se abre sola si la pregunta la pide o si es un indicador
             # (una cifra sola no es una gráfica: es el titular del resultado).
@@ -329,6 +349,10 @@ class Orquestador:
                     nits=nits,
                     contenido_crudo=contenido_crudo,
                     request_id=respuesta.request_id,
+                    # El texto ya existe y ya está en pantalla: un Excel pedido a
+                    # los 8 s no puede decir que «el resumen aún estaba en
+                    # redacción». La redacción con IA lo sustituye si llega.
+                    texto=texto_provisional,
                 )
             )
             yield self._etapa(consulta_id, "datos", f"{n_filas} fila(s) obtenidas en {ms_sql} ms.", inicio)
@@ -347,8 +371,15 @@ class Orquestador:
                 "es_listado": bool(nits),
                 "n_nits": len(nits),
                 "sugerencias": respuesta.sugerencias,
+                "nota": nota,
             }
-            yield {"tipo": "resultado", "consulta_id": consulta_id, "advertencia": IA_ADVERTENCIA, **cuerpo}
+            yield {
+                "tipo": "resultado",
+                "consulta_id": consulta_id,
+                "advertencia": IA_ADVERTENCIA,
+                "texto_provisional": texto_provisional,
+                **cuerpo,
+            }
 
             if self._detenido(cancelado):
                 self._registrar(registro, "detenida", inicio, etapa_fallo="redactando")
@@ -373,10 +404,16 @@ class Orquestador:
             # Sólo se revisa lo que escribió el modelo: el resumen determinista se
             # construye con la propia tabla, y volver a examinarlo únicamente podría
             # borrar la causa real de una degradación anterior.
+            # La llave es `modelo`, no `degradado`: es la única señal de que el
+            # texto lo escribió un modelo. El resumen que construye el código sale
+            # también por caminos no degradados (un resultado vacío, por ejemplo),
+            # y revisarlo produce falsos positivos —el «500» de «las primeras 500
+            # filas» no está en la tabla, ni los dígitos de «EMPRESA 799»— que
+            # borrarían la causa real de la degradación.
             verificacion = (
-                VerificacionCifras(ok=True)
-                if redaccion.degradado
-                else verificar_cifras(redaccion.texto, filas, n_filas, pregunta, truncado)
+                verificar_cifras(redaccion.texto, filas, n_filas, pregunta, truncado)
+                if redaccion.modelo
+                else VerificacionCifras(ok=True)
             )
             if not verificacion.ok:
                 logger.warning(
@@ -416,6 +453,8 @@ class Orquestador:
                 cifras_verificadas=verificacion.ok,
                 respuesta=redaccion.texto,
                 error=redaccion.error,
+                modelo=redaccion.modelo,
+                forma_redaccion=redaccion.forma,
             )
             self._registrar(registro, "degradada" if redaccion.degradado else "exito", inicio)
         except ErrorAnalyst as exc:
@@ -471,7 +510,11 @@ class Orquestador:
             "ms_redaccion": 0,
             "ms_total": 0,
             "intentos_sql": 0,
-            "modelo": CORTEX_MODEL,
+            # Quién escribió el texto, no quién estaba configurado: vacío
+            # cuando lo escribió el aplicativo. Es la diferencia entre «así
+            # está diseñado» y «la IA falló», y sólo se ve aquí.
+            "modelo": "",
+            "forma_redaccion": "",
             "analyst_request_id": "",
             "etapa_fallo": "",
             "error": "",

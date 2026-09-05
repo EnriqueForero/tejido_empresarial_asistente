@@ -32,7 +32,7 @@ def _bool_env(nombre: str, por_defecto: bool) -> bool:
         return por_defecto
     return valor.strip().lower() in {"1", "true", "yes", "on"}
 
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.5.2"
 APP_TITLE = "Tejido Empresarial · ProColombia"
 
 # ==============================================================================
@@ -303,7 +303,11 @@ SEMANTIC_VIEW = os.getenv(
 #: nombre inexistente la redacción falla en cada pregunta. Si el diagnóstico
 #: («Probar la redacción con IA» en /estado) dice que éste no responde, indica
 #: cuáles sí: se cambia aquí con SF_CORTEX_MODEL, sin tocar el código.
-CORTEX_MODEL = os.getenv("SF_CORTEX_MODEL", "claude-haiku-4-5")
+#: Nombre vigente al preparar esta versión. Si `SF_CORTEX_MODEL` llega vacía
+#: —una variable creada en Railway y luego borrada deja la cadena vacía— se usa
+#: éste: con un modelo vacío, COMPLETE falla en cada pregunta sin decir por qué.
+CORTEX_MODEL_POR_DEFECTO = "claude-haiku-4-5"
+CORTEX_MODEL = os.getenv("SF_CORTEX_MODEL", "").strip() or CORTEX_MODEL_POR_DEFECTO
 
 #: Esquemas sobre los que se acepta ejecutar la SQL generada. Cualquier otro se
 #: rechaza antes de tocar la base, aunque el modelo lo proponga.

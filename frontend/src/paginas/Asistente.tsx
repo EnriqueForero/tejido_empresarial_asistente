@@ -33,6 +33,11 @@ export type Turno = {
   detenido: boolean;
   descargando: Descarga | '';
   errorDescarga: string;
+  /**
+   * Resumen construido con los datos, que llega junto con la tabla. La respuesta
+   * ya está completa con él; si la redacción con IA responde, la sustituye.
+   */
+  provisional: string;
   /** Rehidratado desde la sesión del navegador: no conserva la tabla. */
   recordado: boolean;
 };
@@ -41,7 +46,10 @@ export type Turno = {
 type TurnoGuardado = {
   pregunta: string;
   consulta_id: string;
+  /** Sólo el que escribió el modelo: si está vacío, el texto lo escribió el código. */
   texto: string;
+  provisional: string;
+  detenido: boolean;
   sql: string;
   columnas: string[];
   n_filas: number;
@@ -63,38 +71,84 @@ const ETAPAS: Array<{ clave: string; texto: string }> = [
   { clave: 'validando', texto: 'Revisar la consulta' },
   { clave: 'consultando', texto: 'Consultar la base' },
   { clave: 'datos', texto: 'Recibir los datos' },
-  { clave: 'redactando', texto: 'Redactar la respuesta' },
+  { clave: 'redactando', texto: 'Ampliar el resumen con IA' },
 ];
 const ORDEN_ETAPAS: Record<string, number> = { interpretando: 0, validando: 1, consultando: 2, corrigiendo: 2, datos: 3, redactando: 4 };
 
+/**
+ * Qué dice la pastilla cuando el párrafo no lo escribió el modelo. La respuesta
+ * es igual de válida en los cuatro casos —la construye el código con las filas
+ * del resultado—, así que el texto informa, no alarma: lo que cambia es quién
+ * redactó, no si el dato es correcto.
+ */
 const MOTIVOS: Record<string, { sello: string; explicacion: string }> = {
   redaccion_fallo: {
-    sello: 'Resumen automático de los datos: la redacción con IA no estuvo disponible',
+    sello: 'Resumen construido con los datos de la tabla',
     explicacion:
-      'La función de redacción de Snowflake (Cortex COMPLETE) no respondió. La tabla y la consulta son exactas; sólo falta el texto escrito. La causa exacta aparece abajo y también en la página /estado, paso «Cortex COMPLETE».',
+      'La respuesta es completa y exacta: la escribió el aplicativo con las filas del resultado, sin pasar por ningún modelo. Lo que no funcionó es el párrafo adicional que redacta la IA de Snowflake (Cortex COMPLETE), que aporta estilo pero no datos. La causa más frecuente es que el nombre del modelo configurado ya no exista; la causa exacta está aquí abajo, y en la página «Estado» el botón «Probar la redacción con IA» dice qué modelo poner en SF_CORTEX_MODEL.',
   },
   redaccion_pausada: {
-    sello: 'Resumen automático de los datos: la redacción con IA está en pausa',
+    sello: 'Resumen construido con los datos de la tabla',
     explicacion:
-      'La redacción falló varias veces seguidas, así que el asistente dejó de esperarla: cada respuesta llega ahora en cuanto Snowflake devuelve la tabla, en vez de tardar unos veinte segundos más para volver a fallar. Se reintenta sola pasados unos minutos. La causa del último fallo aparece abajo.',
+      'Igual que en el caso anterior, y además el asistente dejó de intentarlo durante unos minutos para no hacerle esperar veinte segundos de más en cada pregunta. Vuelve a intentarlo solo. La causa del último fallo está aquí abajo.',
   },
   respuesta_vacia: {
-    sello: 'Resumen automático de los datos: la redacción con IA llegó vacía',
-    explicacion: 'El modelo devolvió una respuesta vacía. La tabla y la consulta son exactas; se muestra un resumen construido con los datos.',
+    sello: 'Resumen construido con los datos de la tabla',
+    explicacion:
+      'El modelo devolvió un texto vacío. La respuesta que está viendo la escribió el aplicativo con las filas del resultado: es exacta.',
+  },
+  respuesta_ilegible: {
+    sello: 'Resumen construido con los datos de la tabla',
+    explicacion:
+      'El modelo respondió con una forma que el aplicativo no supo leer, así que no se usó nada de ella. La respuesta que está viendo la escribió el aplicativo con las filas del resultado: es exacta.',
   },
   cifras_sin_respaldo: {
-    sello: 'Se descartaron cifras sin respaldo en la tabla',
+    sello: 'Se descartó una cifra que no estaba en la tabla',
     explicacion:
-      'El texto redactado citaba una cifra que no está en la tabla. Para no mostrar un dato sin respaldo, se reemplazó por un resumen construido con los datos reales.',
+      'El párrafo que escribió el modelo citaba una cifra que no aparece en el resultado. Antes que mostrarle un dato sin respaldo, el aplicativo lo reemplazó por un resumen construido con los datos reales.',
   },
 };
+
+/**
+ * Quién escribió el texto que se está mostrando. Es la única fuente de la
+ * pastilla, del cronómetro y del desglose de tiempos: mientras cada uno lo
+ * dedujo por su cuenta, una respuesta cuyo párrafo escribió el código podía
+ * salir sellada como «escrito con IA» sólo porque el usuario dejó de esperar.
+ */
+export function autoria(
+  meta: MetaIA,
+  hayTextoDelModelo: boolean,
+  turno: { detenido: boolean },
+): { tono: 'ok' | 'alerta' | 'neutro'; sello: string; explicacion: string } {
+  if (hayTextoDelModelo && !meta.degradado) {
+    return { tono: 'ok', sello: 'Resumen escrito con IA · cifras verificadas', explicacion: '' };
+  }
+  if (hayTextoDelModelo) {
+    const motivo = MOTIVOS[meta.motivo_degradacion];
+    return {
+      // El rojo se reserva para lo único que salió mal de verdad: una cifra que
+      // el aplicativo descartó por no estar en la tabla.
+      tono: meta.motivo_degradacion === 'cifras_sin_respaldo' ? 'alerta' : 'neutro',
+      sello: motivo?.sello ?? 'Resumen construido con los datos de la tabla',
+      explicacion: motivo?.explicacion ?? '',
+    };
+  }
+  return {
+    tono: 'neutro',
+    sello: 'Resumen construido con los datos de la tabla',
+    explicacion: turno.detenido
+      ? 'Usted pidió no esperar el párrafo de la IA. La respuesta que está viendo la escribió el aplicativo con las filas del resultado: es exacta y está completa.'
+      : 'La conexión terminó antes del párrafo de la IA. La respuesta que está viendo la escribió el aplicativo con las filas del resultado: es exacta y está completa.',
+  };
+}
 
 /** Milisegundos como segundos con un decimal, en formato local. */
 const segundos = (ms: number) => (ms / 1000).toFixed(1).replace('.', ',');
 
 let contadorTurnos = 0;
 const nuevoTurno = (pregunta: string): Turno => ({
-  id: ++contadorTurnos, pregunta, respuesta: null, error: '', detenido: false, descargando: '', errorDescarga: '', recordado: false,
+  id: ++contadorTurnos, pregunta, respuesta: null, error: '', detenido: false, descargando: '', errorDescarga: '',
+  recordado: false, provisional: '',
 });
 
 const conRespuesta = (turno: Turno): turno is Turno & { respuesta: RespuestaIA } => Boolean(turno.respuesta && turno.respuesta.sql && !turno.error);
@@ -107,10 +161,12 @@ function cargarHilo(): Turno[] {
     return guardados.map((g) => ({
       ...nuevoTurno(g.pregunta),
       recordado: true,
+      provisional: g.provisional ?? '',
+      detenido: Boolean(g.detenido),
       respuesta: {
         tipo: 'final', consulta_id: g.consulta_id, texto: g.texto, sql: g.sql, columnas: g.columnas, filas: [],
         n_filas: g.n_filas, truncado: false, grafica: null, mostrar_grafica: false, es_listado: g.es_listado, n_nits: 0,
-        sugerencias: [], advertencia: '', meta: g.meta,
+        sugerencias: [], advertencia: '', nota: '', meta: g.meta,
       },
     }));
   } catch {
@@ -120,13 +176,18 @@ function cargarHilo(): Turno[] {
 
 function guardarHilo(turnos: Turno[]): void {
   try {
-    // Sólo turnos ya terminados: uno con la tabla pero sin texto es un estado
-    // transitorio que la rehidratación no sabría representar.
+    // Basta con que haya texto que mostrar: desde que llega la tabla lo hay
+    // (el resumen construido con los datos), y si después llegó el del modelo,
+    // ése es el que se guarda.
     const terminados = turnos.filter(
-      (t): t is Turno & { respuesta: RespuestaIA } => conRespuesta(t) && Boolean(t.respuesta.texto),
+      (t): t is Turno & { respuesta: RespuestaIA } => conRespuesta(t) && Boolean(t.respuesta.texto || t.provisional),
     );
     const guardados: TurnoGuardado[] = terminados.slice(-6).map((t) => ({
-      pregunta: t.pregunta, consulta_id: t.respuesta.consulta_id, texto: t.respuesta.texto, sql: t.respuesta.sql,
+      pregunta: t.pregunta, consulta_id: t.respuesta.consulta_id,
+      // Por separado: colapsarlos haría que, al recargar, un texto del código
+      // pareciera escrito por la IA.
+      texto: t.respuesta.texto, provisional: t.provisional, detenido: t.detenido,
+      sql: t.respuesta.sql,
       columnas: t.respuesta.columnas, n_filas: t.respuesta.n_filas, es_listado: t.respuesta.es_listado, meta: t.respuesta.meta,
     }));
     if (guardados.length) window.sessionStorage.setItem(CLAVE_HILO, JSON.stringify(guardados));
@@ -155,6 +216,8 @@ export default function Asistente() {
   const [turnos, setTurnos] = useState<Turno[]>(cargarHilo);
   const [etapa, setEtapa] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  /** Ocupado de verdad: si sólo falta el párrafo de la IA, ya se puede preguntar. */
+  const trabajando = ocupado && etapa !== 'redactando';
   const [transcurrido, setTranscurrido] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const finRef = useRef<HTMLDivElement>(null);
@@ -196,7 +259,10 @@ export default function Asistente() {
   const enviar = useCallback(
     async (texto: string) => {
       const limpia = texto.trim();
-      if (!limpia || ocupado) return;
+      // Esperar sólo el párrafo de la IA no es estar ocupado: la respuesta ya
+      // está en pantalla y lo natural es poder seguir preguntando.
+      if (!limpia || (ocupado && etapa !== 'redactando')) return;
+      abortRef.current?.abort();
       setPregunta('');
       setOcupado(true);
       setEtapa('interpretando');
@@ -212,9 +278,13 @@ export default function Asistente() {
             if (evento.tipo === 'etapa') setEtapa(evento.etapa);
             if (evento.tipo === 'error') actualizar(turno.id, { error: evento.mensaje });
             if (evento.tipo === 'resultado') {
-              // La tabla y la consulta ya se pueden leer y descargar; el texto
-              // llega en el evento siguiente.
-              actualizar(turno.id, { respuesta: { ...evento, tipo: 'final', texto: '', meta: META_PENDIENTE } });
+              // La respuesta ya está completa: tabla, consulta, gráfica y el
+              // resumen construido con los datos. Lo que falta —el párrafo escrito
+              // por el modelo— llega después y sustituye al provisional.
+              actualizar(turno.id, {
+                provisional: evento.texto_provisional,
+                respuesta: { ...evento, tipo: 'final', texto: '', meta: META_PENDIENTE },
+              });
             }
             if (evento.tipo === 'final') actualizar(turno.id, { respuesta: evento });
           },
@@ -227,12 +297,16 @@ export default function Asistente() {
           actualizar(turno.id, { error: error instanceof ErrorApi ? error.message : 'El asistente no pudo responder.' });
         }
       } finally {
-        setOcupado(false);
-        setEtapa('');
-        abortRef.current = null;
+        // Sólo si este flujo sigue siendo el vigente: si el usuario ya lanzó la
+        // pregunta siguiente, apagar aquí dejaría su tarjeta de progreso muerta.
+        if (abortRef.current === controlador) {
+          setOcupado(false);
+          setEtapa('');
+          abortRef.current = null;
+        }
       }
     },
-    [ocupado, turnos, estado, sesionId, actualizar],
+    [ocupado, etapa, turnos, estado, sesionId, actualizar],
   );
 
   const detener = () => abortRef.current?.abort();
@@ -320,7 +394,7 @@ export default function Asistente() {
                     type="button"
                     className="asistente__sugerencia"
                     onClick={() => void enviar(sugerencia.texto)}
-                    disabled={bloqueado || ocupado}
+                    disabled={bloqueado || trabajando}
                   >
                     <span className="asistente__grupo">{sugerencia.grupo}</span>
                     {sugerencia.texto}
@@ -354,7 +428,7 @@ export default function Asistente() {
                   {turno.respuesta && (
                     <Respuesta
                       turno={turno}
-                      ocupado={ocupado}
+                      ocupado={trabajando}
                       enCurso={ocupado && indice === turnos.length - 1 && !turno.error}
                       etapa={indice === turnos.length - 1 ? etapa : ''}
                       transcurrido={indice === turnos.length - 1 ? transcurrido : 0}
@@ -398,13 +472,13 @@ export default function Asistente() {
                       : 'Por ejemplo: ¿cuántas empresas medianas de Agroalimentos hay en Antioquia y cuántas exportan?'
                   }
                   rows={2}
-                  disabled={bloqueado || ocupado}
+                  disabled={bloqueado || trabajando}
                 />
                 <span className="asistente__contador" aria-live="off">
                   {pregunta.length} / {maximo}
                 </span>
               </div>
-              {ocupado ? (
+              {trabajando ? (
                 <button type="button" className="boton boton--fantasma" onClick={detener}>
                   Detener
                 </button>
@@ -420,7 +494,7 @@ export default function Asistente() {
                 pueden descargar durante {estado.resultado_minutos} minutos.
               </span>
               {turnos.length > 0 && (
-                <button type="button" className="enlace-boton" onClick={reiniciar} disabled={ocupado}>
+                <button type="button" className="enlace-boton" onClick={reiniciar} disabled={trabajando}>
                   Empezar un hilo nuevo
                 </button>
               )}
@@ -504,8 +578,12 @@ function Respuesta({
   if (!respuesta) return null;
   const { columnas, filas, n_filas, truncado, grafica, meta, es_listado } = respuesta;
   const graficaAbierta = verGrafica ?? respuesta.mostrar_grafica;
-  const motivo = MOTIVOS[meta.motivo_degradacion];
   const redactando = !respuesta.texto && enCurso;
+  // La respuesta está completa desde que llega la tabla: el resumen construido con
+  // los datos viene con ella. Lo que puede faltar es el párrafo escrito por el
+  // modelo, y eso se dice al lado del texto, sin dejar la pantalla en blanco.
+  const textoVisible = respuesta.texto || turno.provisional;
+  const sello = autoria(meta, Boolean(respuesta.texto), turno);
 
   const copiarSql = async () => {
     try {
@@ -520,57 +598,63 @@ function Respuesta({
   return (
     <div className="asistente__respuesta">
       <div aria-live="polite">
-        {respuesta.texto ? (
-          <p className="asistente__texto">{respuesta.texto}</p>
-        ) : turno.error ? null : redactando ? (
+        {textoVisible ? (
+          <p className="asistente__texto">{textoVisible}</p>
+        ) : turno.error ? null : (
+          <p className="asistente__nota">
+            {turno.detenido ? 'Consulta detenida antes de recibir el resultado.' : 'Sin resultado.'}
+          </p>
+        )}
+        {redactando && !turno.error && (
           <p className="asistente__redactando" role="status">
-            <Spinner oscuro /> Redactando el resumen <span aria-hidden="true">({segundos(transcurrido)} s)</span>… la tabla ya
-            está lista.
+            <Spinner oscuro /> La respuesta ya está completa. Ampliando el resumen con IA
+            <span aria-hidden="true"> ({segundos(transcurrido)} s)</span>…
             {etapa === 'redactando' && (
               <button type="button" className="enlace-boton" onClick={alDetener}>
-                Quedarme con la tabla
+                No hace falta, gracias
               </button>
             )}
-          </p>
-        ) : (
-          // Sin texto y sin petición viva: detenida, o cortada antes de terminar.
-          <p className="asistente__nota">
-            {turno.detenido
-              ? 'Consulta detenida: la tabla llegó, el texto no.'
-              : 'El resumen escrito no llegó a completarse. La tabla y la consulta son las que se ejecutaron.'}
           </p>
         )}
       </div>
 
+      {respuesta.nota && <p className="asistente__nota">{respuesta.nota}</p>}
+
       <div className="asistente__sellos">
-        {respuesta.texto && (
-          <Pastilla tono={meta.degradado ? 'alerta' : 'ok'}>
-            {meta.degradado ? motivo?.sello ?? 'Resumen automático de los datos' : 'Cifras verificadas contra la tabla'}
-          </Pastilla>
-        )}
+        {textoVisible && !redactando && <Pastilla tono={sello.tono}>{sello.sello}</Pastilla>}
         {n_filas > 0 && <Pastilla tono="azul">{formatearEntero(n_filas)} fila(s)</Pastilla>}
         {es_listado && <Pastilla tono="acento">Listado de empresas</Pastilla>}
         {respuesta.texto && !redactando && <Pastilla>{segundos(meta.ms_total)} s</Pastilla>}
       </div>
 
-      {meta.degradado && (motivo || meta.detalle_degradacion) && (
+      {textoVisible && !redactando && sello.tono !== 'ok' && (sello.explicacion || meta.detalle_degradacion) && (
         <details className="asistente__motivo">
-          <summary>¿Por qué?</summary>
-          {motivo && <p>{motivo.explicacion}</p>}
+          <summary>¿Por qué este resumen lo escribió el aplicativo y no la IA?</summary>
+          {sello.explicacion && <p>{sello.explicacion}</p>}
           {meta.detalle_degradacion && (
             <p className="asistente__causa">
-              <span className="asistente__causa-etiqueta">Lo que respondió Snowflake:</span> {meta.detalle_degradacion}
+              <span className="asistente__causa-etiqueta">Detalle técnico, para quien administra el aplicativo:</span>{' '}
+              {meta.detalle_degradacion}
             </p>
           )}
         </details>
       )}
 
-      {respuesta.texto && (
+      {textoVisible && !redactando && (
         <p className="asistente__tiempos">
           Interpretar la pregunta {segundos(meta.ms_interpretacion)} s · consultar la base {segundos(meta.ms_consulta)} s
           {meta.ms_correccion > 0 ? ` · corregir la consulta ${segundos(meta.ms_correccion)} s` : ''}
-          {meta.intentos_sql > 1 ? ` (${meta.intentos_sql} intentos)` : ''} · redactar {segundos(meta.ms_redaccion)} s
-          {meta.modelo ? ` (${meta.modelo})` : ''}
+          {meta.intentos_sql > 1 ? ` (${meta.intentos_sql} intentos)` : ''}
+          {/* Sólo se cobra el tiempo de la IA cuando la IA hizo algo: el
+              desglose llegó a decir «redactar 20,6 s» de una llamada que
+              ninguna respuesta usó. */}
+          {meta.modelo
+            ? ` · escribir el texto ${segundos(meta.ms_redaccion)} s (IA: ${meta.modelo})`
+            : meta.motivo_degradacion === 'redaccion_pausada'
+              ? ' · sin esperar a la IA (en pausa)'
+              : meta.ms_redaccion > 0
+                ? ` · esperar a la IA ${segundos(meta.ms_redaccion)} s (no respondió)`
+                : ''}
         </p>
       )}
 

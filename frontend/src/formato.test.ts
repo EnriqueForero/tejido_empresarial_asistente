@@ -35,11 +35,28 @@ describe('claseDeCifra — la misma regla que backend/ia/forma.clase_de_cifra', 
     expect(claseDeCifra('Total expo 5 anos USD')).toBe('usd');
     expect(claseDeCifra('Exportaciones totales de la empresa 2021 (FOB USD)')).toBe('usd');
     expect(claseDeCifra('Ingresos operacionales (COP)')).toBe('cop');
-    expect(claseDeCifra('Promedio pobreza municipio')).toBe('numero');
+    expect(claseDeCifra('Empleados')).toBe('numero');
   });
 
   it('el NIT nunca se abrevia ni se separa en miles', () => {
     expect(formatearCompacto(899999068, 'NIT')).toBe('899999068');
     expect(formatearCompacto(52158504845.93, 'Total expo 5 anos USD')).toBe('USD 52,2 mil M');
+  });
+});
+
+describe('porcentajes y conteos', () => {
+  it('un conteo de empresas exportadoras no son dólares', () => {
+    // En producción la gráfica dibujaba «USD 3 k» sobre 3.340 empresas.
+    expect(claseDeCifra('Numero exportadoras')).toBe('numero');
+    expect(formatearValor(3340, 'Numero exportadoras')).toBe('3.340');
+    expect(claseDeCifra('EXPO_2025')).toBe('usd');
+  });
+
+  it('un porcentaje lleva su símbolo, igual que en la gráfica', () => {
+    expect(claseDeCifra('Promedio pobreza municipio')).toBe('porcentaje');
+    expect(formatearValor(19.891126, 'Promedio pobreza municipio')).toBe('19,89 %');
+    expect(formatearValor(12.35, 'PCT exportadoras')).toBe('12,35 %');
+    // Un porcentaje con «USD» en el nombre sigue siendo un porcentaje.
+    expect(claseDeCifra('PARTICIPACION_USD_PCT')).toBe('porcentaje');
   });
 });

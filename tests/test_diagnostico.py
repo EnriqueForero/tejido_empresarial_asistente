@@ -86,9 +86,11 @@ def test_abierto_con_token_y_señala_las_variables_que_faltan(monkeypatch) -> No
     cuerpo = respuesta.json()
     assert cuerpo["modo"] == "snowflake"
     assert cuerpo["todo_ok"] is False
-    primer_paso = cuerpo["pasos"][0]
-    assert primer_paso["paso"] == "entorno" and primer_paso["ok"] is False
-    assert "SF_ACCOUNT" in primer_paso["error"]
+    # Por nombre y no por posición: añadir un paso al diagnóstico no puede
+    # romper una prueba que habla de otro.
+    entorno = next(paso for paso in cuerpo["pasos"] if paso["paso"] == "entorno")
+    assert entorno["ok"] is False
+    assert "SF_ACCOUNT" in entorno["error"]
     assert "Railway" in cuerpo["siguiente_paso"]
 
 

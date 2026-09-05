@@ -58,6 +58,10 @@ VARIABLES_LLAVE = [
 
 logger = logging.getLogger("tejido.snowflake")
 
+#: Marca cada consulta del aplicativo en QUERY_HISTORY. Es lo que permite
+#: separar su gasto del resto de la cuenta sin adivinar por el warehouse.
+ETIQUETA_CONSULTAS = "TEJIDO_EMPRESARIAL_REACT"
+
 #: Segundos que se espera antes de cerrar una sesión retirada: da tiempo a que
 #: terminen las consultas que otros hilos tengan en curso sobre ella.
 GRACIA_CIERRE = 60.0
@@ -301,7 +305,7 @@ class SnowflakeService:
             "schema": os.getenv("SF_SCHEMA"),
             "warehouse": os.getenv("SF_WAREHOUSE"),
             "role": os.getenv("SF_ROLE"),
-            "query_tag": "TEJIDO_EMPRESARIAL_REACT",
+            "query_tag": ETIQUETA_CONSULTAS,
             # Acota el intento de conexión: sin esto un fallo puede tardar minutos.
             "login_timeout": _entero("SF_LOGIN_TIMEOUT", 30),
             "network_timeout": _entero("SF_NETWORK_TIMEOUT", 60),
@@ -313,6 +317,10 @@ class SnowflakeService:
             # de 5.000 empresas tarda segundos; 300 s es holgado y medible.
             "session_parameters": {
                 "STATEMENT_TIMEOUT_IN_SECONDS": _entero("SF_STATEMENT_TIMEOUT", 300),
+                # También como parámetro de sesión: así QUERY_HISTORY.QUERY_TAG
+                # marca cada consulta del aplicativo y su gasto se puede separar
+                # del resto de la cuenta (docs/METRICAS.md, sección de costos).
+                "QUERY_TAG": ETIQUETA_CONSULTAS,
             },
         }
 
@@ -530,13 +538,16 @@ class SnowflakeService:
             return
 
     # ── Diagnóstico paso a paso ─────────────────────────────────────────
-    def diagnostico(self, probar_cortex: bool = False) -> list[dict[str, Any]]:
+    def diagnostico(self, probar_cortex: bool = False, reconectar: bool = False) -> list[dict[str, Any]]:
         """Recorre la cadena completa y reporta dónde se rompe (sin secretos).
 
         Args:
             probar_cortex: Si es cierto, prueba además la redacción con IA. Va
                 aparte porque es el único paso que gasta créditos de Cortex, y
                 el diagnóstico se abre a menudo sólo para mirar la conexión.
+            reconectar: Si es cierto, cierra la sesión y abre una nueva antes de
+                comprobarla. Por defecto se reutiliza la que haya: revisar el
+                estado no debería cortarle la conexión a quien está consultando.
         """
         from backend.config import (
             COMPANY_TABLE,
@@ -614,7 +625,11 @@ class SnowflakeService:
 
         # 4. Sesión con Snowflake.
         def _sesion():
-            self._reset_session()
+            # Reconectar sólo si hace falta. Abrir el diagnóstico llegó a cortarle
+            # la sesión a quien estaba consultando en ese mismo momento; con
+            # `?reconectar=1` se puede pedir la reconexión a propósito.
+            if reconectar or self._session is None:
+                self._reset_session()
             sesion = self.session(intentos=1)
             return {
                 "llave_usada": self._last_working_key,
@@ -679,10 +694,32 @@ class SnowflakeService:
             }
 
         paso("vista_semantica", f"Vista semántica del asistente · {SEMANTIC_VIEW}", _vista_semantica)
+        def _tablas_asistente():
+            """Las dos tablas de métricas, y sólo su existencia.
+
+            `SELECT 1` en vez de `SELECT *`: una fila de ASISTENTE_CONSULTAS trae
+            la pregunta, la respuesta y la SQL de alguien, y este diagnóstico
+            puede estar abierto. Aquí sólo se cuenta.
+            """
+            from backend.config import ASISTENTE_DOWNLOAD_TABLE
+
+            faltan = []
+            detalle = {}
+            for nombre, tabla in (("consultas", ASISTENTE_LOG_TABLE), ("descargas", ASISTENTE_DOWNLOAD_TABLE)):
+                try:
+                    self.session().sql(f"SELECT 1 FROM {tabla} LIMIT 1").collect()
+                    detalle[nombre] = "existe"
+                except Exception as exc:  # noqa: BLE001 - se reporta, no se propaga aún
+                    detalle[nombre] = "falta"
+                    faltan.append(f"{tabla}: {redactar(exc, 200)}")
+            if faltan:
+                raise RuntimeError(" · ".join(faltan))
+            return detalle
+
         paso(
             "tabla_asistente_log",
-            f"Tabla de métricas del asistente · {ASISTENTE_LOG_TABLE}",
-            lambda: {"filas_de_prueba": len(self.session().sql(f"SELECT * FROM {ASISTENTE_LOG_TABLE} LIMIT 1").collect())},
+            f"Tablas de métricas del asistente · {ASISTENTE_LOG_TABLE} y ASISTENTE_DESCARGAS",
+            _tablas_asistente,
         )
 
         def _region():

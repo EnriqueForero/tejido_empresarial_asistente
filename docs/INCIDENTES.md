@@ -16,8 +16,39 @@ aplicativo: la causa de un fallo casi nunca está donde aparece el error.
 | 2026-09-04 | Un candado no reentrante dejaba colgada la primera pregunta del servicio | `threading.RLock` y una prueba que crea el orquestador |
 | 2026-09-04 | Cuarta publicación fallida: una prueba importaba a otra y en Colab el módulo no existía | `tests/dobles.py` + `pythonpath` en `pyproject.toml`; la batería corre desde cualquier directorio |
 | 2026-09-05 | La redacción con IA falla en las tres primeras preguntas de producción, 20 s cada una | Interruptor tras 3 fallos (D-13); modelo vigente por defecto; prueba de modelos en `/estado` (D-14); causa visible en pantalla |
+| 2026-09-05 | La 3.5.1 no corrige nada: `SF_CORTEX_MODEL` estaba fijada en Railway al modelo retirado | La respuesta deja de esperar a la redacción (D-16); el diagnóstico exige credencial en un dominio publicado; el contacto lo gobierna el código (D-15) |
 
 ---
+
+## 2026-09-05 · Una variable de Railway le ganó al valor por defecto del código
+
+**Lo que se vio.** Publicada la 3.5.1 —que cambiaba el modelo por defecto a uno
+vigente— las preguntas seguían degradando con exactamente los mismos 20,5 s.
+
+**Causa.** `SF_CORTEX_MODEL` estaba **fijada** en Railway al modelo retirado. Un
+valor por defecto en el código no puede corregir una variable de entorno: la
+variable manda. Se comprobó en un segundo con `/api/ia/estado`, que publica el
+modelo en uso, y el mensaje de Snowflake lo decía sin ambigüedad:
+`unknown model "claude-3-5-sonnet"`.
+
+**Lo que salió de usar el servicio en vez de leerlo.** La misma sesión de
+comprobación encontró, sin buscarlo: `/api/docs` y `/api/diagnostico` abiertos a
+cualquiera con el enlace, porque `APP_ENV` no valía `production`; las tablas de
+métricas inexistentes, que es la respuesta a por qué el propietario no veía
+ningún registro; el modelo semántico desplegado en una versión anterior; y un
+listado de prospección que devolvió el correo y el teléfono de cien empresas
+reales sin que la pregunta los pidiera.
+
+**Protección.** El diagnóstico exige credenciales en un anfitrión publicado y
+avisa del modo del despliegue (paso `exposicion`); el asistente retira por código
+las columnas de contacto que la pregunta no pidió (D-15); una variable vacía ya
+no deja el modelo en blanco; y, sobre todo, la respuesta dejó de esperar a la
+redacción (D-16), así que un modelo mal configurado cuesta estilo y no tiempo.
+
+**Lección.** Un valor por defecto es una red para quien no configura nada, no
+una corrección para quien configuró mal. Cuando el síntoma sobrevive a la
+corrección, el primer sitio donde mirar es la configuración del despliegue —y la
+forma más barata de mirarlo es usar el servicio.
 
 ## 2026-09-05 · El modelo por defecto ya no existía
 

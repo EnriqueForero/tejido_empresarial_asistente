@@ -105,12 +105,14 @@ def _formato(nombre: str, valores: list[float] | None = None) -> str:
     como «20» dice algo distinto de lo que muestra la fila. Por eso, cuando los
     valores no son enteros y son pequeños, se conservan dos decimales.
     """
+    from backend.ia.forma import clase_de_cifra
+
+    clase = clase_de_cifra(nombre)
+    if clase in ("porcentaje", "usd", "cop"):
+        return clase
+    # Lo propio del eje, que no es cuestión de unidad sino de escala.
     texto = nombre.lower()
-    if "%" in texto or "porcentaje" in texto or texto.startswith("pct") or "pobreza" in texto or "informalidad" in texto:
-        return "porcentaje"
-    if "usd" in texto or "fob" in texto or "expo" in texto:
-        return "usd"
-    if "cop" in texto or "ingreso" in texto or "activo" in texto or "utilidad" in texto:
+    if "ingreso" in texto or "activo" in texto or "utilidad" in texto:
         return "cop"
     if valores:
         finitos = [valor for valor in valores if isinstance(valor, (int, float))]

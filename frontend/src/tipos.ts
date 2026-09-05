@@ -163,7 +163,11 @@ export type MetaIA = {
   modelo: string;
   /** El texto es el resumen automático de los datos, no la redacción con IA. */
   degradado: boolean;
-  /** 'redaccion_fallo' · 'respuesta_vacia' · 'cifras_sin_respaldo' · 'redaccion_pausada' · ''. */
+  /**
+   * Por qué el texto lo escribió el aplicativo y no el modelo:
+   * 'redaccion_fallo' · 'redaccion_pausada' · 'respuesta_vacia' ·
+   * 'respuesta_ilegible' · 'cifras_sin_respaldo' · '' (lo escribió la IA).
+   */
   motivo_degradacion: string;
   /** Causa real, ya sin secretos, para no tener que abrir /estado ni los registros. */
   detalle_degradacion: string;
@@ -202,6 +206,8 @@ export type CuerpoResultadoIA = {
   n_nits: number;
   sugerencias: string[];
   advertencia: string;
+  /** Aviso sobre el propio resultado (por ejemplo, columnas de contacto retiradas). */
+  nota: string;
 };
 
 /** Evento del flujo SSE: avance por etapas, resultado, error o texto final. */
@@ -212,7 +218,11 @@ export type EventoIA =
    * Llega antes que el texto porque redactar es la parte lenta y no hay razón
    * para hacer esperar lo que ya está calculado.
    */
-  | ({ tipo: 'resultado' } & CuerpoResultadoIA)
+  /**
+   * Trae ya el resumen construido con los datos (`texto_provisional`), de modo que
+   * la respuesta está completa aquí; la redacción con IA lo sustituye en `final`.
+   */
+  | ({ tipo: 'resultado'; texto_provisional: string } & CuerpoResultadoIA)
   | ({ tipo: 'final'; texto: string; meta: MetaIA } & CuerpoResultadoIA);
 
 export type RespuestaIA = Extract<EventoIA, { tipo: 'final' }>;

@@ -4,6 +4,39 @@ Qué se hizo, cuándo y con qué resultado, en orden cronológico. El CHANGELOG
 dice qué cambió en cada versión; esta bitácora dice cómo se llegó allí. Las
 decisiones de fondo están en `DECISIONES.md`; los fallos, en `INCIDENTES.md`.
 
+## 2026-09-05 · 3.5.2 — la respuesta deja de esperar
+
+**Punto de partida.** La 3.5.1 publicada, y la misma queja: «la parte de la
+redacción no salió bien». El propietario añadió dos cosas: que no entendía a qué
+se refiere «la redacción» y que no le parecía necesaria, porque la tabla y la
+gráfica salen bien; y que le dijéramos cómo ver en Snowflake lo consultado y el
+costo.
+
+**Método.** Usar el aplicativo, no leer el código: cuatro preguntas reales por
+el mismo flujo SSE que abre el navegador, el diagnóstico completo, la prueba de
+modelos y las dos descargas. Eso dio la causa en una línea —Snowflake responde
+`unknown model "claude-3-5-sonnet"`, y `/api/ia/estado` confirma que la variable
+de Railway estaba fijada a ese nombre— y de paso cuatro hallazgos que ninguna
+lectura del código habría dado: `/api/docs` abierto, el diagnóstico sin
+credenciales, las tablas de métricas inexistentes y el contacto de cien empresas
+en un listado que no lo pidió. Después, una revisión de 46 agentes: tres diseños
+independientes para la entrega del texto, tres jueces con criterios distintos, y
+cinco lentes con refutación adversaria por hallazgo.
+
+**La decisión de fondo.** El propietario tenía razón a medias. La redacción con
+IA no es necesaria para responder —las cifras las garantiza el código— pero sí
+mejora el texto cuando funciona. Lo que no tenía sentido era **esperarla**: la
+respuesta estaba completa a los 7,8 s y él esperaba hasta los 29,1 s. Se
+descartó apagarla con una variable (renuncia a algo que funciona) y se descartó
+el relevo automático de modelo (recupera el párrafo pero sigue haciendo
+esperar). Queda D-16: la respuesta viaja con su resumen y la IA sólo la mejora.
+
+**Resultado.** 178 pruebas de backend y 15 de interfaz en verde. Del lado del
+propietario quedan tres cosas, todas fuera del código y las tres escritas en
+`RAILWAY_VARIABLES.md` §0: `SF_CORTEX_MODEL=claude-haiku-4-5`, borrar `APP_ENV`
+y poner `APP_DIAG_TOKEN`, y ejecutar el guion de telemetría. Y, en Snowflake,
+redesplegar el modelo semántico.
+
 ## 2026-09-05 · 3.5.1 — la redacción con IA, de verdad
 
 **Punto de partida.** La 3.5.0 se publicó y funcionó: la tabla llega antes que
@@ -29,11 +62,12 @@ distingue dólares de pesos; `docs/COSTOS.md` responde la pregunta de los
 créditos con guiones listos para Snowsight.
 
 **Resultado.** 155 pruebas en verde, `ruff` limpio, vitest y build del frontend
-sin cambios de contrato. Queda pendiente del propietario, en Snowflake y no en
-el código: fijar `SF_CORTEX_MODEL` con lo que diga la prueba, habilitar la
-inferencia entre regiones si hace falta, redesplegar el YAML del modelo
-semántico (la cuenta todavía tiene el de la 3.4.x) y bajar el `AUTO_SUSPEND` del
-warehouse.
+sin cambios de contrato. Quedó pendiente del propietario: fijar
+`SF_CORTEX_MODEL` **en Railway** con lo que diga la prueba, redesplegar el YAML
+del modelo semántico (la cuenta todavía tenía el de la 3.4.x) y bajar el
+`AUTO_SUSPEND` del warehouse **en Snowflake**. Al día siguiente se comprobó
+contra el servicio real que la variable estaba fijada en el modelo retirado: de
+ahí sale la 3.5.2.
 
 ## 2026-09-04 · 3.5.0 — puesta a punto del asistente
 

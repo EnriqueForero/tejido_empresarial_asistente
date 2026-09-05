@@ -517,7 +517,12 @@ def test_la_presentacion_tambien_sale_del_servidor(cliente: TestClient) -> None:
     assert respuesta.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.presentationml")
 
 
-def test_la_descarga_sin_texto_lo_declara_en_el_archivo(cliente: TestClient) -> None:
+def test_la_descarga_sin_texto_no_deja_el_archivo_mudo(cliente: TestClient) -> None:
+    """Desde 3.5.2 el resumen se guarda con el resultado, así que esto casi no pasa.
+
+    Sólo queda el caso de un resultado anterior que siga en memoria tras un
+    redespliegue. El archivo tiene que decir algo cierto, no quedarse en blanco.
+    """
     from backend.routers.asistente import orquestador_ia
 
     _sembrar("abc123abc127")
@@ -525,7 +530,7 @@ def test_la_descarga_sin_texto_lo_declara_en_el_archivo(cliente: TestClient) -> 
     respuesta = cliente.post("/api/ia/exportar/excel", json={"consulta_id": "abc123abc127"})
     libro = openpyxl.load_workbook(io.BytesIO(respuesta.content))
     textos = " ".join(str(c.value) for fila in libro["Respuesta"].iter_rows() for c in fila if c.value is not None)
-    assert "aún estaba en redacción" in textos
+    assert "la consulta de este archivo son las que se ejecutaron" in textos
 
 
 # ── Exportador estándar con notas y advertencia ──────────────────────────

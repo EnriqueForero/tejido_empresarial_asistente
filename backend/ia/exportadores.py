@@ -58,7 +58,7 @@ def _clase_numerica(columna: str) -> str:
     lo desvió a texto antes de llegar a este punto.
     """
     clase = clase_de_cifra(columna)
-    return clase if clase in ("usd", "cop") else "numero"
+    return clase if clase in ("usd", "cop", "porcentaje") else "numero"
 
 
 def _ancho(columna: str, valores: list[Any]) -> float:
@@ -148,6 +148,8 @@ def crear_excel(
         "usd_par": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "num_format": "#,##0.00;[Red]-#,##0.00"}),
         "cop": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "num_format": "#,##0;[Red]-#,##0"}),
         "cop_par": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "num_format": "#,##0;[Red]-#,##0"}),
+        "porcentaje": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "num_format": '#,##0.00" %"'}),
+        "porcentaje_par": libro.add_format({"font_name": FONT_BODY, "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "num_format": '#,##0.00" %"'}),
         "id": libro.add_format({"font_name": "Consolas", "font_size": 10, "border": 1, "border_color": BORDER, "align": "left"}),
         "id_par": libro.add_format({"font_name": "Consolas", "font_size": 10, "border": 1, "border_color": BORDER, "bg_color": PAPER, "align": "left"}),
     }

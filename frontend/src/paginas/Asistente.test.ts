@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { MetaIA } from '../tipos';
-import { contexto, type Turno } from './Asistente';
+import { autoria, contexto, type Turno } from './Asistente';
 
 const META: MetaIA = {
   modelo: '', degradado: false, motivo_degradacion: '', detalle_degradacion: '', cifras_verificadas: true, forma_redaccion: '',
@@ -15,11 +15,12 @@ const META: MetaIA = {
 
 function turno(id: number, pregunta: string, sql: string, error = ''): Turno {
   return {
-    id, pregunta, error, detenido: false, descargando: '', errorDescarga: '', recordado: false,
+    id, pregunta, error, detenido: false, descargando: '', errorDescarga: '', recordado: false, provisional: '',
     respuesta: sql
       ? {
           tipo: 'final', consulta_id: `id${id}`.padEnd(12, '0'), texto: 'ok', sql, columnas: [], filas: [], n_filas: 0,
-          truncado: false, grafica: null, mostrar_grafica: false, es_listado: false, n_nits: 0, sugerencias: [], advertencia: '', meta: META,
+          truncado: false, grafica: null, mostrar_grafica: false, es_listado: false, n_nits: 0, sugerencias: [],
+          advertencia: '', nota: '', meta: META,
         }
       : null,
   };
@@ -46,5 +47,41 @@ describe('contexto', () => {
 
   it('sin turnos previos no envía nada', () => {
     expect(contexto([], 2)).toEqual({ consulta_ids: [], historial: [] });
+  });
+});
+
+/**
+ * La pastilla dice quién escribió el texto. Llegó a decir «escrito con IA»
+ * sobre un texto que escribió el aplicativo, sólo porque el usuario dejó de
+ * esperar el párrafo: es la clase de error que hace desconfiar de todo lo demás.
+ */
+describe('autoria', () => {
+  const quieto = { detenido: false };
+
+  it('sólo dice «escrito con IA» cuando la IA escribió', () => {
+    const sello = autoria(META, true, quieto);
+    expect(sello.tono).toBe('ok');
+    expect(sello.sello).toContain('escrito con IA');
+  });
+
+  it('sin texto del modelo nunca atribuye a la IA, ni aunque el usuario dejara de esperar', () => {
+    for (const turno of [quieto, { detenido: true }]) {
+      const sello = autoria(META, false, turno);
+      expect(sello.tono).toBe('neutro');
+      expect(sello.sello).toBe('Resumen construido con los datos de la tabla');
+      expect(sello.explicacion).not.toBe('');
+    }
+    expect(autoria(META, false, { detenido: true }).explicacion).toContain('no esperar');
+  });
+
+  it('el rojo se reserva para la cifra que el aplicativo descartó', () => {
+    const descartada = { ...META, degradado: true, motivo_degradacion: 'cifras_sin_respaldo' };
+    expect(autoria(descartada, true, quieto).tono).toBe('alerta');
+    // Que la IA no respondiera no es una alarma: la respuesta es correcta igual.
+    for (const motivo of ['redaccion_fallo', 'redaccion_pausada', 'respuesta_vacia', 'respuesta_ilegible']) {
+      const sello = autoria({ ...META, degradado: true, motivo_degradacion: motivo }, true, quieto);
+      expect(sello.tono, motivo).toBe('neutro');
+      expect(sello.explicacion, motivo).not.toBe('');
+    }
   });
 });

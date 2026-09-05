@@ -46,7 +46,19 @@ def instalar(app: FastAPI) -> None:
     async def security_layer(request: FastAPIRequest, call_next):
         content_length = request.headers.get("content-length")
         is_health = request.url.path == "/api/health"
-        if content_length and content_length.isdigit() and int(content_length) > MAX_REQUEST_BYTES:
+        # Sin `Content-Length` no hay nada que comparar: una petición troceada
+        # (Transfer-Encoding: chunked) pasaba de largo el tope. Los métodos con
+        # cuerpo tienen que declarar su tamaño.
+        sin_tamano = (
+            request.method in ("POST", "PUT", "PATCH")
+            and not content_length
+            and "chunked" in request.headers.get("transfer-encoding", "").lower()
+        )
+        if sin_tamano:
+            response = JSONResponse(
+                {"detail": "La solicitud debe declarar su tamaño (Content-Length)."}, status_code=411
+            )
+        elif content_length and content_length.isdigit() and int(content_length) > MAX_REQUEST_BYTES:
             response = JSONResponse({"detail": "La solicitud supera el tamaño permitido."}, status_code=413)
         elif ACCESS_CONTROL_PARTIAL and not is_health:
             response = JSONResponse({"detail": "El control de acceso está configurado de forma incompleta."}, status_code=503)

@@ -57,6 +57,28 @@ Vista_Principal · Datos_Completos · Diccionario— con la pregunta, la consult
 la advertencia de IA en la hoja Resumen. Para cambiar de tema, pulse **«Empezar
 un hilo nuevo»**.
 
+## 1.bis · Qué es «la redacción» y por qué la respuesta no la espera
+
+La respuesta del asistente tiene cuatro partes, y **sólo una** la escribe un
+modelo de lenguaje:
+
+| Parte | Quién la hace | ¿Puede equivocarse? |
+|---|---|---|
+| La consulta SQL | Cortex Analyst, a partir del modelo semántico | Sí, y por eso el código la revisa antes de ejecutarla |
+| La tabla y la gráfica | Snowflake y este aplicativo | No: son los datos |
+| El resumen de dos o tres frases | El aplicativo, leyendo la propia tabla | No: cada cifra que dice está en el resultado |
+| **La redacción**: el mismo resumen, escrito con mejor prosa | El modelo de `SF_CORTEX_MODEL`, dentro de Snowflake | Se le revisan las cifras: si cita una que no está en la tabla, se descarta |
+
+Desde la versión 3.5.2 la respuesta **no espera** a la redacción: en cuanto
+Snowflake devuelve la tabla, usted ve el resultado completo con su resumen. Si
+la redacción llega —tarda entre dos y cuatro segundos con un modelo vigente—,
+sustituye ese texto por uno mejor escrito. Si no llega, no falta nada: la
+pastilla dice «Resumen construido con los datos de la tabla» y ahí se acaba el
+asunto.
+
+Dicho de otro modo: **si la redacción con IA no funciona, el asistente sigue
+sirviendo para lo mismo**. Lo que se pierde es estilo, no información.
+
 ## 2 · Lo que hay que saber antes de usarlo
 
 La respuesta la construye una inteligencia artificial y **puede contener
@@ -68,9 +90,9 @@ El aplicativo hace su parte, y lo dice con una pastilla debajo del texto:
 
 | Pastilla | Qué significa |
 |---|---|
-| **Cifras verificadas contra la tabla** (verde) | La IA redactó el texto y cada cifra que cita existe en la tabla. |
-| **Resumen automático de los datos: la redacción con IA no estuvo disponible** (ámbar) | La función de redacción de Snowflake falló. La tabla y la consulta son exactas; el texto es un resumen construido por el aplicativo. «¿Por qué?» muestra la explicación; la causa técnica está en `/estado` (paso «cortex_complete») y en la tabla de métricas. |
-| **Se descartaron cifras sin respaldo en la tabla** (ámbar) | La IA citó una cifra que no está en la tabla; se reemplazó por el resumen automático. La protección funcionó. |
+| **Resumen escrito con IA · cifras verificadas** (verde) | El párrafo lo escribió el modelo y cada cifra que cita existe en la tabla. |
+| **Resumen construido con los datos de la tabla** (gris) | El párrafo lo escribió el aplicativo leyendo el resultado, porque la IA no respondió, está en pausa, devolvió un texto vacío o ilegible, o porque usted no esperó. **La respuesta es igualmente exacta y completa.** El desplegable «¿Por qué este resumen lo escribió el aplicativo y no la IA?» lo explica y muestra la causa técnica. |
+| **Se descartó una cifra que no estaba en la tabla** (rojo) | La IA citó una cifra que no aparece en el resultado; el aplicativo la descartó y puso en su lugar el resumen construido con los datos. Es el único de los tres casos en que algo salió mal, y la protección funcionó. |
 
 Además:
 
@@ -96,8 +118,13 @@ administrador, ejecute en este orden:
 ## 4 · Cómo saber si quedó funcionando
 
 1. Abra `https://tejidoempresarialasistente-production.up.railway.app/estado` y
-   pulse **Ejecutar diagnóstico**. Los pasos `vista_semantica`,
-   `tabla_asistente_log` y `cortex_region` deben quedar en verde.
+   pulse **Ver diagnóstico detallado**. Deben quedar en verde todos los pasos, y
+   en particular «Vista semántica del asistente», «Tablas de métricas del
+   asistente» y «Modo del despliegue y quién puede ver el diagnóstico». Dos
+   avisos que conviene entender: el paso de Cortex sale en verde diciendo «no se
+   probó» —es lo normal, sólo se prueba con el botón de abajo—, y el de la vista
+   semántica avisa en su detalle si la cuenta tiene desplegada una versión
+   anterior del modelo.
 2. Pulse después **Probar la redacción con IA**. Es un botón aparte porque es
    el único paso que gasta créditos de IA: prueba varios modelos y dice cuál
    responde en su cuenta. Copie ese nombre a `SF_CORTEX_MODEL` en Railway. Si
@@ -118,6 +145,7 @@ administrador, ejecute en este orden:
 
 | Lo que ve | Qué significa | Qué hacer |
 |---|---|---|
+| «Resumen construido con los datos de la tabla» en todas las respuestas, y en «¿Por qué?» dice `unknown model "…"` | **La causa más frecuente, y la que se dio en este servicio.** El nombre en `SF_CORTEX_MODEL` ya no existe en Snowflake: los modelos se retiran. | Ponga `SF_CORTEX_MODEL=claude-haiku-4-5` en Railway → Variables y redespliegue. Para saber cuál responde hoy en su cuenta: `/estado` → «Probar la redacción con IA». |
 | «El asistente necesita datos reales» | El aplicativo está en modo demostración. | Quite `APP_DEMO_MODE` en Railway. |
 | «Falta configuración de Snowflake» | Faltan variables `SF_*`. | Complete lo que diga el mensaje (`DIAGNOSTICO_RAILWAY.md`). |
 | «El rol no tiene permiso para usar Cortex (403)» | Falta el primer `GRANT`. | Ejecute `snowflake/01_permisos_asistente.sql`. |

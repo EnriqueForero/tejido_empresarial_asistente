@@ -149,12 +149,12 @@ Cuando llegue un nuevo mes o se cierre un año, edite **sólo** `backend/config.
 ## Calidad y pruebas
 
 ```bash
-# Backend: revisión estática + 161 pruebas (API en modo demo, SQL, guardas, redactor, telemetría, Excel, modelo semántico, rutas)
+# Backend: revisión estática + 178 pruebas (API en modo demo, SQL, guardas, redactor, telemetría, Excel, modelo semántico, rutas)
 pip install -r requirements-dev.txt
 ruff check backend tests scripts
 pytest -q
 
-# Frontend: 3 pruebas (parser SSE, contexto del hilo, tabla estándar) + tipos + build de producción
+# Frontend: 15 pruebas (parser SSE, contexto del hilo, autoría del texto, formato de cifras, tabla estándar) + tipos + build de producción
 cd frontend && npm test && npm run build
 
 # Imagen Docker

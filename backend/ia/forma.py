@@ -34,7 +34,14 @@ _PROPORCION_NIT = 0.8
 #: tienen que decir la misma unidad sobre el mismo número. Se busca sobre el nombre
 #: con los guiones bajos convertidos en espacios, porque para una expresión regular
 #: el guión bajo es parte de la palabra y `expo_2025_usd` no casaría con `\bUSD\b`.
-_DOLARES = re.compile(r"(?<![A-Z])USD(?![A-Z])|FOB", re.IGNORECASE)
+#: El orden importa y está escogido con casos reales del modelo semántico:
+#: `PARTICIPACION_USD_PCT` es un porcentaje y no dólares; `NUMERO_EXPORTADORAS`
+#: es un conteo de empresas y no dólares, aunque contenga «expo»; `EXPO_2025` sí
+#: son dólares. Por eso la moneda se busca por palabra completa y el conteo se
+#: resuelve antes que ella.
+_PORCENTAJE = re.compile(r"(?<![A-Z])PCT(?![A-Z])|PORCENTAJE|POBREZA|INFORMALIDAD|%", re.IGNORECASE)
+_CONTEO = re.compile(r"^(NUMERO|CANTIDAD|CONTEO|TOTAL EMPRESAS)\b|EXPORTADOR[A-Z]*", re.IGNORECASE)
+_DOLARES = re.compile(r"(?<![A-Z])(USD|FOB|EXPO)(?![A-Z])|EXPORTACION[A-Z]*", re.IGNORECASE)
 _PESOS = re.compile(r"(?<![A-Z])COP(?![A-Z])", re.IGNORECASE)
 _IDENTIFICADOR = ("NIT", "CODIGO", "DIGITO", "ID")
 
@@ -46,20 +53,50 @@ def normalizar(nombre: str) -> str:
 
 
 def clase_de_cifra(columna: str) -> str:
-    """«identificador», «usd», «cop» o «numero»: con qué formato se escribe un número.
+    """Con qué unidad se escribe un número de esa columna.
 
-    Un NIT es un número que no se suma ni lleva separador de miles; unas
-    exportaciones sin su unidad son una cifra ambigua. La decisión se toma una
-    sola vez y la comparten el resumen automático y el Excel del asistente.
+    Devuelve «identificador», «porcentaje», «usd», «cop» o «numero». Un NIT no
+    lleva separador de miles; unas exportaciones sin su unidad son una cifra
+    ambigua; y un conteo de empresas exportadoras no son dólares por contener
+    «expo». La decisión se toma **una sola vez** y la comparten la tabla en
+    pantalla, la gráfica, el Excel y el resumen automático: cuando cada uno tenía
+    su propia regla, la gráfica dibujaba «USD 3 k» sobre 3.340 empresas.
     """
     if any(clave in normalizar(columna).split("_") for clave in _IDENTIFICADOR):
         return "identificador"
-    en_palabras = str(columna).replace("_", " ")
+    en_palabras = str(columna).replace("_", " ").strip()
+    if _PORCENTAJE.search(en_palabras):
+        return "porcentaje"
+    if _CONTEO.search(en_palabras):
+        return "numero"
     if _DOLARES.search(en_palabras):
         return "usd"
     if _PESOS.search(en_palabras):
         return "cop"
     return "numero"
+
+
+#: Palabras con las que una pregunta pide datos de contacto. Se comparan sobre la
+#: pregunta normalizada (sin tildes, en mayúsculas), así que «teléfono» y
+#: «telefono» son la misma. Es deliberadamente amplia: dejar pasar contacto que
+#: nadie pidió es peor que incluirlo cuando la intención era dudosa.
+_PIDE_CONTACTO = (
+    "CORREO", "EMAIL", "MAIL", "TELEFONO", "CELULAR", "DIRECCION", "CONTACTO",
+    "CONTACTAR", "CONTACTARLAS", "CONTACTARLOS", "REPRESENTANTE", "FICHA", "DATOS_DE_CONTACTO",
+)
+
+
+def pide_contacto(pregunta: str) -> bool:
+    """¿La pregunta pide expresamente correo, teléfono, dirección o representante?
+
+    El modelo semántico ya se lo indica a Cortex Analyst, pero eso es una
+    instrucción, no una garantía: una vista semántica desactualizada, o un
+    modelo que la pasa por alto, bastan para que un listado de prospección
+    devuelva el correo y el teléfono de cien empresas reales sin que nadie los
+    haya pedido. Aquí la regla la aplica el código (D-03).
+    """
+    normalizada = normalizar(pregunta)
+    return any(senal in normalizada for senal in _PIDE_CONTACTO)
 
 
 def es_columna_contacto(nombre: str) -> bool:

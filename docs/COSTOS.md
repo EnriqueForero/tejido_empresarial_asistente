@@ -15,7 +15,7 @@ código: es el `AUTO_SUSPEND` del warehouse.
 |---|---|---|---|
 | 1 | **`AUTO_SUSPEND` de `APPS_WH`** | Un warehouse encendido consume créditos por segundo. Si está configurado para quedarse encendido esperando (por ejemplo 10 minutos), unas pocas consultas al día lo mantienen despierto muchas horas. Es, con diferencia, la variable que más pesa. | Ver el guion de abajo. `AUTO_SUSPEND = 60` es el punto justo: Snowflake factura un mínimo de 60 segundos por cada arranque, así que suspender antes sólo produce más arranques sin ahorrar. |
 | 2 | **El acceso abierto** | Cualquiera con el enlace puede abrir `/consultar`, buscar y descargar. Cada búsqueda es un conteo más una consulta; cada descarga, hasta 5.000 filas; cada pregunta al asistente, una o dos llamadas a Cortex Analyst. Es el único camino por el que un tercero gasta su presupuesto. | README → «Activar usuario y contraseña». Son dos variables en Railway y un minuto. |
-| 3 | **La redacción con IA que falla** | Hasta la versión 3.5.1, cada pregunta esperaba ~20 s a una llamada que nunca funcionó, y esos 20 s se facturan como tiempo de warehouse. | Ya corregido en el código: tras tres fallos seguidos el aplicativo deja de llamar durante diez minutos. La causa de fondo se arregla en Snowflake (ver `ASISTENTE.md` §5). |
+| 3 | **La redacción con IA que falla** | Hasta la versión 3.5.1, cada pregunta esperaba ~20 s a una llamada que nunca funcionó, y esos 20 s se facturan como tiempo de warehouse. | Corregido en el código: desde 3.5.2 la respuesta no espera a la redacción, y tras tres fallos seguidos el aplicativo deja de llamarla durante diez minutos. La causa de fondo casi siempre está en Railway, no en Snowflake: el nombre de `SF_CORTEX_MODEL` (ver `ASISTENTE.md` §5). |
 | 4 | **La prueba de Cortex del diagnóstico** | Es el único punto del código que gasta créditos de **IA** sin que nadie haya preguntado nada. | Ya corregido: desde 3.5.1 no se ejecuta sola. Hay que pulsar «Probar la redacción con IA» en `/estado`. |
 
 ## Lo que NO cuesta, para dejar de perseguirlo
@@ -61,10 +61,21 @@ GROUP BY 1, 2
 ORDER BY 2 DESC;
 
 -- 4) Y cuánto de eso fue Cortex (se factura aparte del warehouse).
-SELECT MODEL_NAME, COUNT(*) AS LLAMADAS, ROUND(SUM(TOKEN_CREDITS), 4) AS CREDITOS
+--    OJO: esta vista agrega por hora. Sus filas no son llamadas; para saber
+--    cuántas preguntas hubo, mire SEGUIMIENTO.ASISTENTE_CONSULTAS.
+SELECT MODEL_NAME, SUM(TOKENS) AS FICHAS, ROUND(SUM(TOKEN_CREDITS), 4) AS CREDITOS
 FROM SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY
 WHERE START_TIME >= DATEADD('day', -30, CURRENT_TIMESTAMP())
 GROUP BY 1 ORDER BY 3 DESC;
+
+-- 5) Cuánto del warehouse se lo lleva este aplicativo y cuánto otra cosa.
+--    Todas sus consultas van marcadas con QUERY_TAG.
+SELECT IFF(QUERY_TAG = 'TEJIDO_EMPRESARIAL_REACT', 'Aplicativo', 'Otros') AS ORIGEN,
+       COUNT(*) AS CONSULTAS, ROUND(SUM(TOTAL_ELAPSED_TIME) / 60000, 1) AS MINUTOS
+FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY(
+       END_TIME_RANGE_START => DATEADD('day', -7, CURRENT_TIMESTAMP()), RESULT_LIMIT => 10000))
+WHERE WAREHOUSE_NAME = 'APPS_WH'
+GROUP BY 1;
 ```
 
 ## Poner un tope, no sólo mirar

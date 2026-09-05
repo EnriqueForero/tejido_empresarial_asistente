@@ -20,6 +20,8 @@ ser válida, se marca como sustituida y se enlaza la nueva; no se borra.
 | D-12 | Documentos operativos en la raíz; documentos de ingeniería en `docs/` | Vigente |
 | D-13 | Un servicio externo que falla siempre deja de llamarse | Vigente |
 | D-14 | El nombre del modelo de redacción es configuración, no código | Vigente |
+| D-15 | El contacto sale sólo si la pregunta lo pide, y lo decide el código | Vigente |
+| D-16 | La respuesta no espera a la redacción con IA | Vigente |
 
 ---
 
@@ -204,3 +206,41 @@ valor por defecto hasta la 3.5.1, fue retirado, y con un nombre inexistente la
 redacción falla en todas las preguntas sin ninguna otra señal. El aplicativo
 tiene que poder decir cuál usar sin desplegar código y sin que el propietario
 consulte documentación externa.
+
+## D-15 · El contacto sale sólo si la pregunta lo pide, y lo decide el código
+
+**Decisión.** El asistente retira del resultado las columnas de contacto
+(correo, teléfono, dirección, representante legal) salvo que la pregunta las
+haya pedido expresamente (`forma.pide_contacto`), y lo dice en una nota junto a
+la tabla. La decisión del despliegue (`EXPORT_INCLUDE_CONTACT_FIELDS`) sigue
+mandando por encima.
+
+**Por qué.** La regla existía, pero escrita en `custom_instructions` del modelo
+semántico: la cumplía el modelo, no el código. El 5 de septiembre de 2026, con
+el aplicativo abierto a cualquiera con el enlace, la pregunta «Lístame las pymes
+de Agroalimentos en Antioquia que exportan, con NIT» devolvió también el correo
+y el teléfono de cien empresas reales, porque la cuenta tenía desplegada una
+versión anterior del YAML. D-03 dice que el modelo propone y el código dispone;
+aquí el código no disponía.
+
+**Qué se descartó.** Confiar sólo en el redespliegue del modelo semántico: deja
+la protección a merced de un paso manual que ya se había olvidado una vez.
+
+## D-16 · La respuesta no espera a la redacción con IA
+
+**Decisión.** El evento `resultado` lleva `texto_provisional`: el resumen que el
+código construye con la propia tabla. La respuesta está completa en cuanto
+Snowflake devuelve los datos. La redacción con IA sigue su curso y sustituye ese
+texto en el evento `final` si llega.
+
+**Por qué.** Medido en producción el 5 de septiembre de 2026: la tabla, la
+gráfica y la consulta estaban listas a los 7,8 s, y el usuario esperaba hasta los
+29,1 s por tres frases. El párrafo del modelo aporta estilo, no información —las
+cifras las verifica el código—, así que no tiene por qué bloquear una respuesta
+que ya es correcta. Con la redacción funcionando el efecto también es bueno: se
+lee la tabla mientras se escribe el texto.
+
+**Qué se descartó.** Apagar la redacción con una variable: resuelve la espera
+pero renuncia a un texto mejor cuando el servicio funciona, y deja el aplicativo
+peor de lo que puede estar. Con esta decisión la redacción es una mejora
+opcional de facto, sin necesidad de un interruptor.

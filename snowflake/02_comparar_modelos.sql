@@ -70,7 +70,7 @@ SELECT 'claude-sonnet-5'   AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-sonnet-5
 -- (paso «cortex_complete») ejecuta exactamente esta prueba.
 
 SELECT SNOWFLAKE.CORTEX.COMPLETE(
-  'claude-3-5-sonnet',
+  'claude-haiku-4-5',
   TO_ARRAY(PARSE_JSON('[{"role": "user", "content": "Responde únicamente con la palabra OK."}]')),
   TO_OBJECT(PARSE_JSON('{"temperature": 0, "max_tokens": 8}'))
 ) AS RESPUESTA_CON_OPCIONES;

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import secrets
+import threading
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -14,6 +16,96 @@ from backend.middleware import REALM, valid_basic_credentials
 from backend.routers.asistente import telemetria_ia
 
 router = APIRouter()
+
+#: Segundos entre dos pruebas reales de Cortex. La prueba llama al modelo, es
+#: decir gasta créditos, y en una cuenta mal configurada tarda más de un minuto.
+#: Con el diagnóstico abierto —que es como está el servicio de ProColombia— sin
+#: esto cualquiera podría pedirla en bucle. El propietario no lo nota: pulsar el
+#: botón dos veces seguidas devuelve el mismo resultado, y lo dice.
+PAUSA_ENTRE_PRUEBAS_CORTEX = 300.0
+_candado_cortex = threading.Lock()
+_ultima_prueba_cortex: dict[str, Any] = {"cuando": 0.0, "paso": None}
+
+
+def _prueba_cortex_reciente(reloj: float) -> dict[str, Any] | None:
+    """El resultado de la última prueba si aún vale; si no, None (y se marca en curso)."""
+    with _candado_cortex:
+        paso = _ultima_prueba_cortex["paso"]
+        if paso is not None and reloj - float(_ultima_prueba_cortex["cuando"]) < PAUSA_ENTRE_PRUEBAS_CORTEX:
+            hace = int(reloj - float(_ultima_prueba_cortex["cuando"]))
+            copia = dict(paso)
+            copia["detalle"] = {
+                **(copia.get("detalle") or {}),
+                "reutilizado": True,
+                "nota": (
+                    f"Resultado de la prueba hecha hace {hace} s. La prueba llama al modelo y gasta "
+                    f"créditos, así que se repite como mucho cada {int(PAUSA_ENTRE_PRUEBAS_CORTEX / 60)} minutos."
+                ),
+            }
+            return copia
+        return None
+
+
+def _guardar_prueba_cortex(paso: dict[str, Any] | None, reloj: float) -> None:
+    if paso is None:
+        return
+    with _candado_cortex:
+        _ultima_prueba_cortex["paso"] = dict(paso)
+        _ultima_prueba_cortex["cuando"] = reloj
+
+
+#: Nombres con los que responde un equipo de desarrollo. En un portátil, correr
+#: en modo desarrollo es lo normal y no hay nada que avisar.
+_LOCALES = ("localhost", "127.0.0.1", "[::1]", "testserver", "0.0.0.0")
+
+
+def _publicado(request: FastAPIRequest | None) -> bool:
+    """¿La petición llega por un dominio público, o desde un equipo de desarrollo?"""
+    anfitrion = (request.headers.get("host", "") if request else "").split(":")[0].lower()
+    return bool(anfitrion) and not any(anfitrion.startswith(local) for local in _LOCALES)
+
+
+def paso_exposicion(request: FastAPIRequest | None = None) -> dict[str, Any]:
+    """¿Está el servicio publicado, abierto a cualquiera y además en modo desarrollo?
+
+    Se comprueba aquí y no en Snowflake porque es una propiedad del despliegue.
+    Un servicio con `APP_ENV` distinto de «production» publica `/api/docs` y deja
+    este mismo diagnóstico sin credenciales; en el dominio de Railway eso lo ve
+    cualquiera con el enlace, y en un portátil no importa.
+    """
+    publicado = _publicado(request)
+    en_desarrollo = APP_ENV != "production"
+    protegido = ACCESS_CONTROL_ACTIVE or bool(DIAG_TOKEN)
+    if publicado and en_desarrollo and not ACCESS_CONTROL_ACTIVE:
+        detalle = {
+            "app_env": APP_ENV,
+            "acceso": "abierto" if not ACCESS_CONTROL_ACTIVE else "usuario y contraseña",
+            "que_queda_publico": ["/api/docs", "/api/diagnostico", "/api/diagnostico?cortex=1"],
+        }
+        return {
+            "paso": "exposicion",
+            "descripcion": "Modo del despliegue y quién puede ver el diagnóstico",
+            "ok": False,
+            "detalle": detalle,
+            "error": (
+                f"El servicio corre con APP_ENV='{APP_ENV}' y sin usuario ni contraseña: la documentación "
+                "de la API y este diagnóstico están abiertos a cualquiera con el enlace. En Railway → "
+                "Variables, quite APP_ENV (o póngala en 'production'). Para conservar esta página, "
+                "configure APP_BASIC_USER y APP_BASIC_PASSWORD, o APP_DIAG_TOKEN."
+            ),
+            "segundos": 0.0,
+        }
+    return {
+        "paso": "exposicion",
+        "descripcion": "Modo del despliegue y quién puede ver el diagnóstico",
+        "ok": True,
+        "detalle": {
+            "app_env": APP_ENV,
+            "acceso": "usuario y contraseña" if ACCESS_CONTROL_ACTIVE else "abierto",
+            "diagnostico": "protegido" if protegido else "abierto (APP_ENV=production lo cierra)",
+        },
+        "segundos": 0.0,
+    }
 
 
 @router.get("/api/health")
@@ -77,7 +169,7 @@ def health(request: FastAPIRequest, deep: bool = False) -> dict[str, Any]:
 
 
 @router.get("/api/diagnostico")
-def diagnostico(request: FastAPIRequest, token: str = "", cortex: bool = False) -> dict[str, Any]:
+def diagnostico(request: FastAPIRequest, token: str = "", cortex: bool = False, reconectar: bool = False) -> dict[str, Any]:
     """Revisa paso a paso entorno → conector → llave → sesión → tablas → asistente.
 
     Devuelve el error real de cada paso, sin secretos. Para que no quede abierto
@@ -86,21 +178,26 @@ def diagnostico(request: FastAPIRequest, token: str = "", cortex: bool = False) 
     cabecera X-Diag-Token o, por compatibilidad, en la URL), o APP_ENV=development.
     """
     entregado = request.headers.get("x-diag-token", "") or token
-    autorizado = (
-        ACCESS_CONTROL_ACTIVE
-        or APP_ENV != "production"
-        # `compare_digest` sobre texto exige ASCII: se comparan bytes para que un
-        # token con acentos responda 403 y no un error interno.
-        or (DIAG_TOKEN and secrets.compare_digest(entregado.encode("utf-8"), DIAG_TOKEN.encode("utf-8")))
+    # `compare_digest` sobre texto exige ASCII: se comparan bytes para que un
+    # token con acentos responda 403 y no un error interno.
+    con_credencial = ACCESS_CONTROL_ACTIVE or bool(
+        DIAG_TOKEN and secrets.compare_digest(entregado.encode("utf-8"), DIAG_TOKEN.encode("utf-8"))
     )
+    # En un anfitrión publicado, `APP_ENV` no basta. Se comprobó en producción:
+    # con APP_ENV distinto de «production» este diagnóstico quedaba abierto a
+    # cualquiera con el enlace, y con él once consultas al warehouse, el cierre
+    # de la sesión compartida y —con ?cortex=1— créditos de IA. En un portátil no
+    # cambia nada: `testserver` y `localhost` siguen entrando sin credencial.
+    autorizado = con_credencial or (APP_ENV != "production" and not _publicado(request))
     if not autorizado:
         raise HTTPException(
             status_code=403,
             detail=(
-                "El diagnóstico está cerrado en producción. Active una de estas opciones en "
-                "Railway y vuelva a intentarlo: (1) APP_BASIC_USER y APP_BASIC_PASSWORD "
-                "—recomendado, protege todo el aplicativo—, o (2) APP_DIAG_TOKEN y llame a "
-                "/api/diagnostico?token=EL_MISMO_VALOR."
+                "El diagnóstico necesita credenciales en un servicio publicado. En Railway → "
+                "Variables, configure una de estas dos opciones y vuelva a intentarlo: "
+                "(1) APP_BASIC_USER y APP_BASIC_PASSWORD —lo recomendado, porque protegen todo "
+                "el aplicativo—, o (2) APP_DIAG_TOKEN con un valor largo que usted elija, y "
+                "entre por /estado?token=EL_MISMO_VALOR."
             ),
         )
     if DEMO_MODE:
@@ -111,7 +208,16 @@ def diagnostico(request: FastAPIRequest, token: str = "", cortex: bool = False) 
             "pasos": [],
         }
 
-    pasos = comun.snowflake.diagnostico(probar_cortex=cortex)
+    reloj = time.monotonic()
+    reciente = _prueba_cortex_reciente(reloj) if cortex else None
+    pasos = [paso_exposicion(request), *comun.snowflake.diagnostico(probar_cortex=cortex and reciente is None, reconectar=reconectar)]
+    if cortex:
+        indice = next((i for i, paso in enumerate(pasos) if paso["paso"] == "cortex_complete"), None)
+        if indice is not None:
+            if reciente is not None:
+                pasos[indice] = reciente
+            else:
+                _guardar_prueba_cortex(pasos[indice], reloj)
     fallo = next((paso for paso in pasos if not paso["ok"]), None)
     if fallo:
         logger.error("Diagnóstico: falló el paso '%s' — %s", fallo["paso"], fallo.get("error"))
@@ -137,6 +243,10 @@ def sugerencia(fallo: dict[str, Any] | None) -> str:
     if fallo is None:
         return "Nada pendiente: la conexión y las tablas responden."
     consejos = {
+        "exposicion": "En Railway → Variables, quite APP_ENV (o póngala en «production»): así dejan de ser "
+                      "públicas la documentación de la API y esta misma página. Para seguir viendo el "
+                      "diagnóstico, configure APP_BASIC_USER y APP_BASIC_PASSWORD —que además protegen todo "
+                      "el aplicativo— o, como mínimo, APP_DIAG_TOKEN y entre por /estado?token=EL_VALOR.",
         "entorno": "Complete en Railway las variables que aparecen como faltantes y redespliegue.",
         "conector": "La imagen no trae el conector: revise que el build usara requirements-api.txt.",
         "llave_1": "Regenere el valor con [Convert]::ToBase64String([IO.File]::ReadAllBytes(\"rsa_key_1.der\")) "

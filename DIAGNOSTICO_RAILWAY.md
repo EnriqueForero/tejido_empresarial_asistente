@@ -130,6 +130,7 @@ Con ese enlace el diagnóstico se ejecuta solo.
 
 | Paso en rojo | Qué corregir |
 |---|---|
+| **Modo del despliegue y quién puede ver el diagnóstico** | El servicio corre con `APP_ENV` distinto de `production` y sin usuario y contraseña: la documentación de la API y el detalle de este diagnóstico quedan abiertos a cualquiera con el enlace, y con ellos consultas al warehouse y créditos de IA. En Railway → Variables, **borre** `APP_ENV` (el Dockerfile ya la fija). Para seguir viendo esta página, configure `APP_BASIC_USER` y `APP_BASIC_PASSWORD` —protegen todo el aplicativo— o `APP_DIAG_TOKEN` y entre por `/estado?token=EL_VALOR`. |
 | **Variables de Snowflake presentes** | Falta una variable: la lista aparece en el mensaje. Vuelva al paso 3. |
 | **Conector … disponible** | La imagen se construyó mal. En Railway, pestaña Deployments → vuelva a desplegar el último commit. |
 | **Llave privada 1 interpretable** | El valor pegado no corresponde al archivo `.der`, está incompleto, o la contraseña de la llave no es la correcta. Repita la conversión del paso 3. |
@@ -138,7 +139,8 @@ Con ese enlace el diagnóstico se ejecuta solo.
 | **Tabla de auditoría de eventos** | Sólo afecta el registro de uso. El aplicativo funciona igual. |
 | **Vista semántica del asistente** | El rol no ve el modelo semántico que usa el asistente. Ejecute `snowflake/01_permisos_asistente.sql` en Snowsight (ver `ASISTENTE.md` §3). El resto del aplicativo funciona igual. |
 | **Tabla de métricas del asistente** | No existen las tablas de métricas. Ejecute `snowflake/03_telemetria_asistente.sql`. El asistente responde igual; sólo deja de registrar. |
-| **Redacción con SNOWFLAKE.CORTEX.COMPLETE** | La inteligencia artificial que redacta el resumen no responde: el asistente entrega el resumen automático de los datos con una pastilla ámbar. Lea el error del paso: si habla de *privileges*, falta el `GRANT` de `SNOWFLAKE.CORTEX_USER` (`ASISTENTE.md` §3); si dice que el modelo no existe o no está en la región, cambie la variable `SF_CORTEX_MODEL` en Railway (`snowflake/02_comparar_modelos.sql` ayuda a elegir). |
+| **Región de la cuenta e inferencia entre regiones** | Informativo: dice en qué región está la cuenta y si puede usar modelos de Cortex alojados en otra región. Sólo importa si **ningún** modelo responde. |
+| **Redacción con SNOWFLAKE.CORTEX.COMPLETE** | La inteligencia artificial que redacta el resumen no responde: el asistente entrega el resumen automático de los datos con una pastilla ámbar. Lea el error del paso: si habla de *privileges*, falta el `GRANT` de `SNOWFLAKE.CORTEX_USER` (`ASISTENTE.md` §3); si dice `unknown model`, el nombre de `SF_CORTEX_MODEL` ya no existe —es la causa más frecuente— y se cambia en Railway → Variables (`snowflake/02_comparar_modelos.sql` ayuda a elegir). |
 
 Después de cada corrección: espere el redespliegue de Railway y pulse
 **«Probar la conexión ahora»** en la página de estado.

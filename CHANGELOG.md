@@ -7,6 +7,51 @@ Para un aplicativo de este tipo: **PATCH** corrige textos, estilos o errores; **
 
 ---
 
+## [3.5.2] — 2026-09-05
+
+Verificada contra el servicio real: cuatro preguntas al aplicativo desplegado y
+el diagnóstico completo. La redacción con IA seguía fallando por una variable de
+Railway fijada a un modelo retirado, y la respuesta esperaba veintiún segundos
+por un párrafo que no aporta ninguna cifra. Esta versión hace que la respuesta no
+espere, cierra dos vías de exposición encontradas al usar el servicio, y unifica
+en un solo sitio la regla con la que se escribe cada número.
+
+### Corregido
+- **La respuesta ya no espera a la redacción con IA.** El resumen que el código construye con la propia tabla viaja con el resultado, así que la respuesta está completa en cuanto Snowflake devuelve los datos: medido en producción, **7,8 s en vez de 29,1 s**. Si la redacción llega, sustituye ese texto por uno mejor escrito; si no llega, no falta nada. (D-16)
+- **Se puede escribir la siguiente pregunta mientras se amplía el resumen.** El formulario quedaba bloqueado hasta el final del flujo, aunque la respuesta llevara veinte segundos en pantalla.
+- **La pastilla ya no atribuye a la IA un texto que escribió el aplicativo.** Bastaba con dejar de esperar el párrafo para que la respuesta apareciera sellada como «Resumen escrito con IA · cifras verificadas». Ahora la autoría se calcula en una sola función (`autoria`), y de ella salen también el cronómetro y el desglose de tiempos, que igualmente mentían.
+- **El desglose deja de cobrar 20,6 s de «redactar» cuando nadie redactó.** Dice «escribir el texto … (IA: modelo)» sólo si hubo modelo, «sin esperar a la IA (en pausa)» cuando el interruptor la había cortado, y «esperar a la IA … (no respondió)» cuando la llamada se hizo y falló.
+- **El rojo se reserva para lo único que sale mal de verdad:** una cifra descartada por no estar en la tabla. Que la IA no redactara deja de pintarse como alarma, porque la respuesta es correcta igual.
+- **Un conteo de empresas exportadoras dejó de dibujarse en dólares.** «expo» dentro de «exportadoras» se leía como moneda: la gráfica decía «USD 3 k» sobre 3.340 empresas mientras la tabla decía «3.340».
+- **Un porcentaje se escribe como porcentaje en los cuatro sitios.** Un promedio de pobreza salía «19,9 %» en la gráfica y «19,89» en la tabla, en el texto y en el Excel. La regla de unidad vive ahora en `backend/ia/forma.clase_de_cifra` y su gemela `frontend/src/formato.ts`, y la comparten la tabla, la gráfica, el Excel y el resumen.
+- **Las cifras del resumen automático ya no se revisan como si las hubiera escrito un modelo.** La comprobación se dispara por `modelo`, no por `degradado`: revisar un texto construido con la tabla sólo podía producir falsos positivos y borrar la causa real de la degradación.
+- **Un archivo descargado a los 8 s decía que «el resumen aún estaba en redacción».** El texto ya existía y ya estaba en pantalla; ahora se guarda con el resultado.
+- **`SF_CORTEX_MODEL` vacía dejaba de funcionar la redacción sin decir por qué.** Una variable creada y luego borrada en Railway deja la cadena vacía; ahora se usa el modelo por defecto.
+- El resumen automático nombra la fila por la columna que **distingue** las filas: una evolución de exportaciones de Antioquia por año decía «el valor más alto … en Antioquia», cierto y perfectamente inútil. Y «Bogotá, D.C.» ya no termina con dos puntos seguidos.
+- La prueba de modelos de `/estado` obedece la misma regla que la redacción real —un fallo cuesta una llamada— y tiene un tope de 75 s: probaba las dos formas con cada candidato, y con un modelo inexistente eso son más de tres minutos en una sola petición.
+
+### Corregido · seguridad y costos
+- **El diagnóstico exige credenciales en un servicio publicado.** Se comprobó que `/api/diagnostico` respondía 200 sin ninguna credencial en el dominio de Railway, porque `APP_ENV` no valía `production`; con él quedaban abiertos once consultas al warehouse, el cierre de la sesión compartida y, con `?cortex=1`, créditos de IA. Ahora, en un anfitrión que no sea local, hacen falta usuario y contraseña o `APP_DIAG_TOKEN`, sea cual sea `APP_ENV`. En un equipo de desarrollo no cambia nada.
+- **El diagnóstico dice si el despliegue está expuesto.** Paso nuevo `exposicion`: nombra `APP_ENV`, el modo de acceso y qué queda público, con el arreglo concreto en Railway.
+- **La prueba de Cortex no se puede pedir en bucle:** se ejecuta como mucho una vez cada cinco minutos y reutiliza el resultado, diciéndolo.
+- **Abrir el diagnóstico ya no le corta la sesión a quien está consultando.** Se reconecta sólo si hace falta, o a propósito con `?reconectar=1`.
+- **El tope de tamaño de una solicitud dejó de esquivarse.** Una petición troceada, sin `Content-Length`, pasaba de largo; ahora responde 411.
+- **El asistente retira las columnas de contacto que la pregunta no pidió** y lo dice en una nota. La regla existía sólo en el modelo semántico, es decir la cumplía el modelo: con una vista desactualizada, una pregunta de prospección devolvió el correo y el teléfono de cien empresas reales en un aplicativo abierto. Ahora la aplica el código. (D-03, D-15)
+
+### Agregado
+- `docs/METRICAS.md` responde de frente las dos preguntas del propietario: **qué se ha preguntado y qué se respondió** (con la consulta que pone pregunta y respuesta lado a lado, y otra para `EVENTOS` que ya funciona hoy sin crear nada) y **cuánto cuesta** (créditos del warehouse por día, de Cortex por modelo, y las consultas más caras de los últimos siete días).
+- Todas las consultas del aplicativo van marcadas con `QUERY_TAG = 'TEJIDO_EMPRESARIAL_REACT'` también como parámetro de sesión, así que su gasto se puede separar del resto de la cuenta. Las consultas de costo lo usan.
+- La telemetría registra `FORMA_REDACCION` y, en `MODELO`, **quién escribió el texto** y no quién estaba configurado: es la diferencia entre «así está diseñado» y «la IA falló».
+- El diagnóstico comprueba las **dos** tablas de métricas, con `SELECT 1` en vez de `SELECT *`: una fila de telemetría trae la pregunta y la respuesta de alguien.
+- `snowflake/03_telemetria_asistente.sql`: el rol se escribe una vez (`SET ROL_APP`), la verificación deja de insertar una fila de prueba que se quedaba para siempre, el resumen diario ya no pierde dos de los nueve estados ni hunde las medianas con ceros de preguntas que nunca llegaron a esa etapa, y hay un `ALTER TABLE … ADD COLUMN IF NOT EXISTS` para cuentas donde las tablas ya existan.
+- Pruebas: 161 → **178** en el backend y 10 → **15** en la interfaz. Dos son contratos que hasta ahora nadie sujetaba: que cada motivo de degradación esté explicado en los cinco sitios donde alguien lo va a leer, y que las columnas que escribe la telemetría existan en el DDL con longitud suficiente.
+
+### Cambiado
+- El evento `resultado` lleva `texto_provisional` y `nota`; `meta.motivo_degradacion` admite `respuesta_ilegible`, que existía desde 3.5.1 y no estaba en el contrato ni en la interfaz ni en la documentación.
+- Textos de la interfaz reescritos para quien no sabe qué es «la redacción»: las pastillas, el desplegable «¿Por qué este resumen lo escribió el aplicativo y no la IA?» y el rótulo de la quinta etapa («Ampliar el resumen con IA»).
+- `ASISTENTE.md` explica en una tabla qué parte de la respuesta escribe cada quién, y que si la redacción con IA no funciona el asistente sirve para lo mismo.
+- La documentación manda a Railway el arreglo que está en Railway: tres documentos remitían a Snowflake.
+
 ## [3.5.1] — 2026-09-05
 
 La redacción con IA falló en las tres primeras preguntas de producción, siempre

@@ -196,10 +196,9 @@ def _resultado_guardado(consulta_id: str):
 def _texto_para_archivo(guardado) -> str:
     if guardado.texto:
         return guardado.texto
-    return (
-        "El resumen escrito aún estaba en redacción cuando se descargó este archivo; "
-        "la tabla y la consulta están completas."
-    )
+    # Desde 3.5.2 el resumen se guarda con el resultado, así que este respaldo
+    # sólo aplica a un resultado anterior que siga en memoria tras un redespliegue.
+    return "La tabla y la consulta de este archivo son las que se ejecutaron."
 
 
 def _descarga_ia(contenido: bytes, nombre: str, tipo: str) -> Response:

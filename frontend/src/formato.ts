@@ -14,13 +14,19 @@ const PALABRAS_IDENTIFICADOR = ['NIT', 'Código', 'Dígito', 'ID del', 'posició
  * convención de la sección de consulta («… (FOB USD)»), y sin esto se veían como
  * números sueltos junto a columnas hermanas ya formateadas.
  */
-const DOLARES = /\b(USD|FOB)\b/i;
+// El orden importa, y está escogido con nombres reales del modelo semántico:
+// «PARTICIPACION_USD_PCT» es un porcentaje y no dólares; «Numero exportadoras»
+// es un conteo de empresas y no dólares, aunque contenga «expo»; «EXPO_2025» sí
+// son dólares. Gemela de `backend/ia/forma.clase_de_cifra`.
+const PORCENTAJE = /\bPCT\b|PORCENTAJE|POBREZA|INFORMALIDAD|%/i;
+const CONTEO = /^(NUMERO|CANTIDAD|CONTEO|TOTAL EMPRESAS)\b|EXPORTADOR[A-Z]*/i;
+const DOLARES = /\b(USD|FOB|EXPO)\b|EXPORTACION[A-Z]*/i;
 const PESOS = /\bCOP\b/i;
 // El guion bajo cuenta como letra para \b, así que un alias crudo como
 // «expo_2025_usd» no se reconocería sin separarlo primero.
 const enPalabras = (columna: string) => columna.replace(/_/g, ' ');
 
-export type ClaseDeCifra = 'identificador' | 'usd' | 'cop' | 'numero';
+export type ClaseDeCifra = 'identificador' | 'porcentaje' | 'usd' | 'cop' | 'numero';
 
 /**
  * Con qué formato se escribe un número de esa columna. Es la regla gemela de
@@ -29,8 +35,11 @@ export type ClaseDeCifra = 'identificador' | 'usd' | 'cop' | 'numero';
  */
 export function claseDeCifra(columna: string): ClaseDeCifra {
   if (PALABRAS_IDENTIFICADOR.some((palabra) => columna.includes(palabra))) return 'identificador';
-  if (DOLARES.test(enPalabras(columna))) return 'usd';
-  if (PESOS.test(enPalabras(columna))) return 'cop';
+  const palabras = enPalabras(columna).trim();
+  if (PORCENTAJE.test(palabras)) return 'porcentaje';
+  if (CONTEO.test(palabras)) return 'numero';
+  if (DOLARES.test(palabras)) return 'usd';
+  if (PESOS.test(palabras)) return 'cop';
   return 'numero';
 }
 
@@ -45,6 +54,7 @@ export function formatearValor(valor: unknown, columna: string): string {
   if (typeof valor === 'number') {
     const clase = claseDeCifra(columna);
     if (clase === 'identificador') return String(valor);
+    if (clase === 'porcentaje') return `${decimal2.format(valor)} %`;
     if (clase === 'usd') return `USD ${decimal2.format(valor)}`;
     if (clase === 'cop') return `$ ${entero.format(valor)}`;
     if (columna === 'Antigüedad de la empresa (años)') return decimal1.format(valor);

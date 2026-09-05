@@ -1,9 +1,46 @@
-# Validación · Tejido Empresarial React 3.5.1
+# Validación · Tejido Empresarial React 3.5.2
 
-Fecha: 5 de septiembre de 2026. Alcance: la corrección de la redacción con IA y
-la respuesta a la pregunta de consumo de créditos, sobre la 3.5.0 publicada en
-`https://tejidoempresarialasistente-production.up.railway.app/`. Al final se
-conserva lo verificado en 3.5.0, que sigue vigente.
+Fecha: 5 de septiembre de 2026. Alcance: la respuesta deja de esperar a la
+redacción con IA, se cierran dos vías de exposición encontradas usando el
+servicio, y se unifica la regla con la que se escribe cada cifra. Al final se
+conserva lo verificado en 3.5.1 y en 3.5.0.
+
+## Verificado contra el servicio real, no simulado
+
+Todo lo de esta tabla se comprobó llamando a
+`https://tejidoempresarialasistente-production.up.railway.app` el 5 de
+septiembre de 2026, con la 3.5.1 desplegada.
+
+| Comprobación | Resultado |
+|---|---|
+| Cuatro preguntas reales por el mismo flujo SSE que usa el navegador | Las cuatro degradaron. Snowflake responde literalmente `unknown model "claude-3-5-sonnet"`; `ms_redaccion` = 20.610, 20.542, 20.640 y 0. |
+| Causa | `/api/ia/estado` devuelve `modelo: "claude-3-5-sonnet"`: la variable `SF_CORTEX_MODEL` está fijada en Railway al modelo retirado, así que el valor por defecto del código nunca se aplicó. |
+| El interruptor de 3.5.1 funciona en producción | La cuarta pregunta respondió en **7,36 s** con `motivo = redaccion_pausada` y `ms_redaccion = 0`, en vez de 30 s. |
+| Modelos que sí responden en esa cuenta | `claude-haiku-4-5` y `claude-sonnet-4-6`, según la prueba real de `/api/diagnostico?cortex=1`. |
+| Región | `AWS_US_EAST_2` con `CORTEX_ENABLED_CROSS_REGION = ANY_REGION`: la hipótesis de la región queda descartada. |
+| Tablas de métricas | No existen: nunca se ejecutó `snowflake/03_telemetria_asistente.sql`. Por eso no había registro de preguntas ni respuestas. |
+| Modelo semántico | `version_3_5_0_desplegada: false`: la cuenta tiene el YAML de la 3.4.x. |
+| Exposición | `/api/docs` responde 200 y `/api/diagnostico` también, sin credenciales: `APP_ENV` no vale `production` en Railway. |
+| Descargas | `/api/ia/exportar/excel` y `/api/ia/exportar/empresas` responden 200 con las hojas y las filas correctas; NIT y teléfono como texto, columnas en dólares con dos decimales. |
+| Contacto no solicitado | «Lístame las pymes de Agroalimentos en Antioquia que exportan, con NIT» devolvió también correo y teléfono de 100 empresas reales. |
+
+## Comprobaciones de 3.5.2
+
+| Comprobación | Resultado |
+|---|---|
+| `ruff check backend tests scripts` | Sin hallazgos. |
+| `pytest -q` | **178 pruebas en verde** (161 en 3.5.1). |
+| `npm test` (vitest) | **15 pruebas en 4 archivos** (10 en 3.5.1). |
+| `npm run build` (tsc + Vite) | Limpio. |
+| Revisión adversaria | 3 diseños independientes, 3 jueces con criterios distintos, 5 lentes de revisión y una refutación por hallazgo: 46 agentes. De 35 hallazgos, 33 sobrevivieron a la refutación y se corrigieron con el ajuste verificado de cada uno. |
+| La respuesta no espera al párrafo | Prueba del orquestador: el evento `resultado` ya trae un texto legible construido con la tabla, llega antes que el `final`, y cuando la IA responde su texto lo sustituye. |
+| La pastilla no miente | Prueba de `autoria`: sin texto del modelo nunca dice «escrito con IA», ni aunque el usuario deje de esperar; el rojo se reserva para la cifra descartada. |
+| Unidad única | `NUMERO_EXPORTADORAS` es un conteo y no dólares; `PARTICIPACION_USD_PCT` es un porcentaje y no dólares; `EXPO_2025` sigue siendo dólares. Fijado en pytest y en vitest a la vez, sobre los alias reales del modelo semántico. |
+| El diagnóstico en un dominio publicado | Responde 403 con instrucciones, incluso con `?cortex=1`; desde `localhost` y `testserver` sigue abierto. |
+| El tope de tamaño | Una petición troceada, sin `Content-Length`, responde 411. |
+| Contrato de motivos | Prueba nueva: cada motivo de `MOTIVOS_DEGRADACION` está explicado en la interfaz, en `tipos.ts`, en `CLAUDE.md`, en `docs/METRICAS.md` y en el DDL. Encontró cuatro huecos reales al escribirla. |
+| Contrato de telemetría | Prueba nueva: las columnas que escribe el aplicativo existen en el DDL, sus topes caben en el `VARCHAR`, y el registro del orquestador coincide exactamente con la lista de columnas. |
+| Portabilidad | `pytest` y `python -m pytest`, desde la raíz y desde una copia limpia: 178 en verde en los cuatro casos. |
 
 ## Comprobaciones de 3.5.1
 
@@ -67,7 +104,7 @@ conserva lo verificado en 3.5.0, que sigue vigente.
    `snowflake/04_minimo_privilegio.sql`; redesplegar el YAML del modelo
    semántico (`snowflake/LEEME.md`).
 2. Publicar 3.5.0 con el notebook y esperar el redespliegue de Railway.
-3. Abrir `/estado` → **Ejecutar diagnóstico**: `vista_semantica`,
+3. Abrir `/estado` → **Ver diagnóstico detallado**: `vista_semantica`,
    `tabla_asistente_log` y `cortex_complete` en verde. **Si `cortex_complete`
    falla, ese texto es la causa del caso de 149,5 s.**
 4. En `/asistente`, la primera pregunta sugerida: tabla en menos de 15 s (consulta

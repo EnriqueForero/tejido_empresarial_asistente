@@ -32,6 +32,19 @@ from backend.database import redactar as redactar_secreto
 
 logger = logging.getLogger("tejido.ia")
 
+#: Por qué el texto de una respuesta puede no haberlo escrito el modelo.
+#: La lista es única a propósito: `tests/test_endurecimiento.py` exige que
+#: cada motivo esté explicado en la interfaz, en el contrato y en la
+#: documentación que el propietario usa para leer la telemetría. Añadir uno
+#: sin explicarlo rompe la batería, con el nombre del archivo que falta.
+MOTIVOS_DEGRADACION = (
+    "redaccion_fallo",
+    "redaccion_pausada",
+    "respuesta_vacia",
+    "respuesta_ilegible",
+    "cifras_sin_respaldo",
+)
+
 #: Filas de la tabla que viajan al modelo. Para resumir no hacen falta más: el
 #: detalle lo tiene el usuario en la tabla y en el Excel.
 _MAX_FILAS_PROMPT = 20
@@ -171,7 +184,10 @@ def _valor_legible(valor: Any, columna: str = "") -> str:
         if clase == "identificador":
             # Un NIT con separador de miles («899.999.068») deja de ser un NIT.
             return str(int(valor)) if float(valor).is_integer() else str(valor)
-        return {"usd": "USD ", "cop": "$ "}.get(clase, "") + _numero_legible(float(valor))
+        legible = _numero_legible(float(valor))
+        if clase == "porcentaje":
+            return legible + " %"
+        return {"usd": "USD ", "cop": "$ "}.get(clase, "") + legible
     return _celda(valor) or "Sin dato"
 
 
@@ -196,22 +212,31 @@ _NOMBRA = ("RAZON_SOCIAL", "RAZON", "NOMBRE")
 _IDENTIFICA = ("NIT", "CODIGO", "DIGITO", "ID")
 
 
-def _columna_que_nombra(columnas: list[str], textuales: list[int]) -> int | None:
-    """Columna de texto que sirve para nombrar una fila: «ECOPETROL S A», no «899999068»."""
+def _columna_que_nombra(columnas: list[str], textuales: list[int], filas: list[list[Any]]) -> int | None:
+    """Columna de texto que sirve para nombrar una fila: «ECOPETROL S A», no «899999068».
+
+    Entre varias candidatas gana la que **distingue** las filas. En producción,
+    una evolución de exportaciones de Antioquia por año decía «el valor más alto
+    … en Antioquia»: cierto y perfectamente inútil, porque las siete filas eran
+    de Antioquia y lo que las diferenciaba era el periodo.
+    """
     from backend.ia.forma import normalizar
 
     if not textuales:
         return None
     normalizadas = {indice: normalizar(columnas[indice]) for indice in textuales}
-    for indice in textuales:
-        if any(clave in normalizadas[indice] for clave in _NOMBRA):
-            return indice
-    descriptivas = [
-        indice
-        for indice in textuales
-        if not any(clave in normalizadas[indice].split("_") for clave in _IDENTIFICA)
-    ]
-    return descriptivas[0] if descriptivas else None
+
+    def distingue(indice: int) -> bool:
+        return len({fila[indice] for fila in filas if indice < len(fila)}) > 1
+
+    for candidatas in (
+        [i for i in textuales if any(c in normalizadas[i] for c in _NOMBRA)],
+        [i for i in textuales if not any(c in normalizadas[i].split("_") for c in _IDENTIFICA)],
+    ):
+        if not candidatas:
+            continue
+        return next((i for i in candidatas if distingue(i)), candidatas[0])
+    return None
 
 
 def _columna_que_mide(columnas: list[str], numericas: list[int]) -> int | None:
@@ -255,7 +280,7 @@ def resumen_determinista(columnas: list[str], filas: list[list[Any]], n_filas: i
         omitidas = len(columnas) - len(visibles)
         resto = f" y {omitidas} columnas más" if omitidas > 0 else ""
         partes.append(f"Primer registro → {primera}{resto}.")
-        etiqueta = _columna_que_nombra(columnas, textuales)
+        etiqueta = _columna_que_nombra(columnas, textuales, filas)
         medida = _columna_que_mide(columnas, numericas)
         # Con un resultado recortado, el mayor de las filas traídas no es el mayor:
         # es la misma razón por la que `verificar_cifras` no acepta del modelo una
@@ -263,10 +288,12 @@ def resumen_determinista(columnas: list[str], filas: list[list[Any]], n_filas: i
         if medida is not None and etiqueta is not None and len(filas) > 1 and not truncado:
             mejor = max(filas, key=lambda fila: fila[medida] if _es_numero(fila[medida]) else float("-inf"))
             if _es_numero(mejor[medida]):
+                donde = _valor_legible(mejor[etiqueta])
                 partes.append(
                     f"El valor más alto de «{columnas[medida]}» es "
                     f"{_valor_legible(mejor[medida], columnas[medida])}, "
-                    f"en {_valor_legible(mejor[etiqueta])}."
+                    # «Bogotá, D.C.» ya termina en punto: dos seguidos se leen mal.
+                    f"en {donde}" + ("" if donde.endswith(".") else ".")
                 )
 
     if truncado:
