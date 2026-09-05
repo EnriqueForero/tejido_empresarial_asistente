@@ -327,7 +327,7 @@ export default function Consultar() {
               {modo !== 'batch_nits' && (
                 <div className="directa__ejemplos">
                   <span>Ejemplos:</span>
-                  {(modo === 'business_name' ? ['tejidos', 'café', 'software'] : ['900000001', '900000003', '9000000']).map((ejemplo) => (
+                  {(modo === 'business_name' ? ['tejidos', 'café', 'software'] : (meta?.nit_examples ?? [])).map((ejemplo) => (
                     <button key={ejemplo} type="button" onClick={() => setTermino(ejemplo)}>
                       {ejemplo}
                     </button>
@@ -356,7 +356,7 @@ export default function Consultar() {
                       setTermino(evento.target.value);
                       marcarCambio();
                     }}
-                    placeholder={modo === 'business_name' ? 'Ej. tecnología colombiana' : 'Ej. 900409346'}
+                    placeholder={modo === 'business_name' ? 'Ej. tecnología colombiana' : `Ej. ${meta?.nit_examples?.[0] ?? '890903938'}`}
                   />
                   <button className="boton boton--cinta boton--xl" type="submit" disabled={!valido || cargando}>
                     {cargando ? (
@@ -374,6 +374,7 @@ export default function Consultar() {
               <CargaNits
                 nits={nits}
                 maximo={meta?.batch_max_nits ?? 5000}
+                ejemplos={meta?.nit_examples ?? []}
                 alCambiar={(lista) => {
                   setNits(lista);
                   marcarCambio();

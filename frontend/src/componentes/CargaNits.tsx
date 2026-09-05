@@ -11,6 +11,8 @@ type Props = {
   alCambiar: (nits: string[], origen: string) => void;
   alConsultar: () => void;
   cargando: boolean;
+  /** NIT de ejemplo para el marcador del área de texto. */
+  ejemplos?: string[];
 };
 
 export function extraerNits(texto: string, maximo: number): { validos: string[]; descartados: number } {
@@ -31,7 +33,7 @@ export function extraerNits(texto: string, maximo: number): { validos: string[];
   return { validos: [...vistos], descartados };
 }
 
-export function CargaNits({ nits, maximo, alCambiar, alConsultar, cargando }: Props) {
+export function CargaNits({ nits, maximo, alCambiar, alConsultar, cargando, ejemplos = [] }: Props) {
   const [arrastrando, setArrastrando] = useState(false);
   const [nombre, setNombre] = useState('');
   const [texto, setTexto] = useState('');
@@ -84,7 +86,7 @@ export function CargaNits({ nits, maximo, alCambiar, alConsultar, cargando }: Pr
       <textarea
         className="campo"
         value={texto}
-        placeholder={'901067966\n760459043\n890905456'}
+        placeholder={(ejemplos.length ? ejemplos : ['890903938', '811000740', '890912462']).join('\n')}
         aria-label="Pegue los NIT, uno por línea"
         onChange={(evento) => {
           setTexto(evento.target.value);

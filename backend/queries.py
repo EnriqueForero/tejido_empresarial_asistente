@@ -24,7 +24,14 @@ from backend.models import SearchRequest, clean_nit
 
 
 def sql_literal(value: object) -> str:
-    return "'" + str(value).replace("'", "''") + "'"
+    """Literal SQL cerrado: escapa la barra invertida ANTES que la comilla.
+
+    Snowflake acepta ``\'`` como comilla escapada dentro de un literal; con sólo
+    duplicar la comilla, un valor como ``x\' OR 1=1 --`` dejaba el literal
+    abierto y el resto del texto se ejecutaba como SQL.
+    """
+    texto = str(value).replace("\\", "\\\\").replace("'", "''")
+    return "'" + texto + "'"
 
 
 def _active_filters(request: SearchRequest, allowed: set[str]) -> list[str]:

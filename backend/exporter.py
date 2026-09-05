@@ -86,8 +86,8 @@ def _slug(value: str, limit: int = 40) -> str:
     return (safe or "consulta")[:limit].strip("-")
 
 
-def filename_for(request: SearchRequest, total: int, now: datetime | None = None) -> str:
-    """Nombre descriptivo: institución, aplicativo, tipo de consulta, criterio, fecha y tamaño."""
+def filename_for(request: SearchRequest, total: int, now: datetime | None = None, prefijo: str = "") -> str:
+    """Nombre descriptivo: institución, aplicativo, [origen], tipo de consulta, criterio, fecha y tamaño."""
     if request.mode == "filters":
         first_value = next((values[0] for values in request.filters.values() if values), "")
         active = sum(len(values) for values in request.filters.values())
@@ -102,7 +102,8 @@ def filename_for(request: SearchRequest, total: int, now: datetime | None = None
         criterion = f"{len(request.nits)}-NIT"
     stamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M")
     noun = "empresa" if total == 1 else "empresas"
-    return f"ProColombia_TejidoEmpresarial_{TYPE_LABELS[request.mode]}_{criterion}_{stamp}_{total}-{noun}.xlsx"
+    origen = f"{_slug(prefijo, 24)}_" if prefijo else ""
+    return f"ProColombia_TejidoEmpresarial_{origen}{TYPE_LABELS[request.mode]}_{criterion}_{stamp}_{total}-{noun}.xlsx"
 
 
 def _safe_value(value: Any) -> Any:
@@ -309,7 +310,18 @@ def _write_table(
     return header_row, last_row
 
 
-def _summary_sheet(workbook: xlsxwriter.Workbook, styles: Styles, request: SearchRequest, total: int, exported: int, columns: int, has_profile: bool, generated: datetime) -> None:
+def _summary_sheet(
+    workbook: xlsxwriter.Workbook,
+    styles: Styles,
+    request: SearchRequest,
+    total: int,
+    exported: int,
+    columns: int,
+    has_profile: bool,
+    generated: datetime,
+    notas: list[tuple[str, Any]] | None = None,
+    aviso: str = "",
+) -> None:
     sheet = workbook.add_worksheet("Resumen")
     _title_block(sheet, styles, "Tejido Empresarial · ProColombia", "Resultado de consulta · ejes de Exportaciones, Inversión y Turismo", 6)
 
@@ -326,6 +338,9 @@ def _summary_sheet(workbook: xlsxwriter.Workbook, styles: Styles, request: Searc
     for key, values in request.filters.items():
         if values and key in FILTERS_BY_KEY:
             rows.append((FILTERS_BY_KEY[key]["label"], "; ".join(values)))
+    # Filas adicionales de quien pide el libro (p. ej. el asistente: pregunta,
+    # origen y consulta ejecutada), con el mismo estilo que el resto.
+    rows.extend(notas or [])
 
     row = 5
     sheet.write(row, 0, "CONSULTA", styles.kicker)
@@ -373,6 +388,12 @@ def _summary_sheet(workbook: xlsxwriter.Workbook, styles: Styles, request: Searc
     )
     sheet.merge_range(row, 0, row + 3, 5, note, styles.note)
     row += 5
+    if aviso:
+        # Advertencia obligatoria cuando el listado nace de una respuesta de IA.
+        sheet.write(row, 0, "ADVERTENCIA", styles.kicker)
+        row += 1
+        sheet.merge_range(row, 0, row + 2, 5, _safe_value(aviso), styles.note)
+        row += 4
     sheet.write(row, 0, f"Generado por el Aplicativo de Tejido Empresarial · versión {APP_VERSION} · Gerencia de Inteligencia Comercial · ProColombia", styles.muted)
 
     sheet.set_column(0, 0, 36)
@@ -478,8 +499,16 @@ def create_export(
     total: int,
     glossary: list[dict[str, Any]],
     generated: datetime | None = None,
+    notas: list[tuple[str, Any]] | None = None,
+    aviso: str = "",
 ) -> BytesIO:
-    """Construye el libro completo en memoria y devuelve el buffer listo para enviar."""
+    """Construye el libro completo en memoria y devuelve el buffer listo para enviar.
+
+    Args:
+        notas: Filas adicionales para la hoja Resumen, como (etiqueta, valor).
+        aviso: Texto de advertencia que se destaca en la hoja Resumen (el
+            asistente lo usa para la advertencia de IA).
+    """
     generated = generated or datetime.now()
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {
@@ -500,7 +529,7 @@ def create_export(
     })
     styles = Styles(workbook)
     has_profile = len(frame) == 1
-    _summary_sheet(workbook, styles, request, total, len(frame), len(frame.columns), has_profile, generated)
+    _summary_sheet(workbook, styles, request, total, len(frame), len(frame.columns), has_profile, generated, notas, aviso)
     if has_profile:
         _profile_sheet(workbook, styles, frame)
 

@@ -30,3 +30,7 @@ cryptography
 # Sólo para las pruebas.
 pytest==8.3.5
 httpx==0.28.1
+# Lee el modelo semántico en tests/test_modelo_semantico.py (sólo pruebas).
+PyYAML==6.0.2
+# Revisión estática (sintaxis y pyflakes) en la integración continua.
+ruff==0.12.7

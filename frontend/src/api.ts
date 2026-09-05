@@ -65,6 +65,19 @@ export function buscarEmpresas(solicitud: SolicitudBusqueda, signal?: AbortSigna
   return json<RespuestaBusqueda>('/api/companies/search', { method: 'POST', body: JSON.stringify(solicitud), signal });
 }
 
+/** Entrega un archivo al navegador y libera el objeto un momento después. */
+function entregarArchivo(contenido: Blob, nombre: string): void {
+  const url = URL.createObjectURL(contenido);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  enlace.rel = 'noopener';
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 /** Descarga el Excel y lo entrega al navegador. Devuelve el nombre del archivo. */
 export async function descargarExcel(solicitud: SolicitudBusqueda): Promise<string> {
   let response: Response;
@@ -81,15 +94,7 @@ export async function descargarExcel(solicitud: SolicitudBusqueda): Promise<stri
   const blob = await response.blob();
   const codificado = response.headers.get('X-Export-Filename');
   const nombre = codificado ? decodeURIComponent(codificado) : 'ProColombia_TejidoEmpresarial.xlsx';
-  const url = URL.createObjectURL(blob);
-  const enlace = document.createElement('a');
-  enlace.href = url;
-  enlace.download = nombre;
-  enlace.rel = 'noopener';
-  document.body.appendChild(enlace);
-  enlace.click();
-  enlace.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+  entregarArchivo(blob, nombre);
   return nombre;
 }
 
@@ -98,23 +103,48 @@ export async function descargarExcel(solicitud: SolicitudBusqueda): Promise<stri
 export const obtenerEstadoIA = () => json<EstadoIA>('/api/ia/estado');
 
 /**
+ * Identificador de la pestaña, sólo para la telemetría del asistente. Vive en
+ * `sessionStorage`: muere con la pestaña y no identifica a la persona.
+ */
+export function obtenerSesionId(): string {
+  const clave = 'tejido.sesion';
+  try {
+    let valor = window.sessionStorage.getItem(clave);
+    if (!valor) {
+      const crudo = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      valor = crudo.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+      window.sessionStorage.setItem(clave, valor);
+    }
+    return valor;
+  } catch {
+    return '';
+  }
+}
+
+export type CuerpoPreguntaIA = {
+  pregunta: string;
+  /** Identificadores de las respuestas previas del hilo: la memoria vive en el servidor. */
+  consulta_ids: string[];
+  /** Respaldo del historial, por si el servidor ya no conserva esas respuestas. */
+  historial: Array<Record<string, unknown>>;
+  sesion_id: string;
+};
+
+/**
  * Envía la pregunta y va entregando los eventos a medida que llegan (SSE).
  *
  * Se lee el cuerpo como flujo en vez de usar `EventSource` porque hace falta un
- * POST con el historial de la conversación, y `EventSource` sólo hace GET.
+ * POST con el contexto de la conversación, y `EventSource` sólo hace GET. Las
+ * líneas de comentario (`: latido`) que el servidor manda para mantener viva
+ * la conexión no traen `data:` y se ignoran.
  */
-export async function preguntarIA(
-  pregunta: string,
-  historial: Array<Record<string, unknown>>,
-  alRecibir: (evento: EventoIA) => void,
-  signal?: AbortSignal,
-): Promise<void> {
+export async function preguntarIA(cuerpo: CuerpoPreguntaIA, alRecibir: (evento: EventoIA) => void, signal?: AbortSignal): Promise<void> {
   let respuesta: Response;
   try {
     respuesta = await fetch('/api/ia/preguntar', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pregunta, historial }),
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': cuerpo.sesion_id },
+      body: JSON.stringify(cuerpo),
       signal,
     });
   } catch (error) {
@@ -131,38 +161,54 @@ export async function preguntarIA(
     const { done, value } = await lector.read();
     if (done) break;
     pendiente += decodificador.decode(value, { stream: true });
-    // Cada evento SSE termina en una línea en blanco.
-    const bloques = pendiente.split('\n\n');
-    pendiente = bloques.pop() ?? '';
-    for (const bloque of bloques) {
-      const linea = bloque.split('\n').find((texto) => texto.startsWith('data: '));
-      if (!linea) continue;
-      try {
-        alRecibir(JSON.parse(linea.slice(6)) as EventoIA);
-      } catch {
-        /* un bloque incompleto se ignora; el siguiente trae el evento entero */
-      }
-    }
+    const { eventos, resto } = extraerEventosSse(pendiente);
+    pendiente = resto;
+    eventos.forEach(alRecibir);
   }
 }
 
-/** Descarga el resultado del asistente como Excel o como presentación. */
-export async function exportarIA(formato: 'excel' | 'pptx', datos: Record<string, unknown>): Promise<void> {
-  const respuesta = await fetch(`/api/ia/exportar/${formato}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(datos),
-  });
+/**
+ * Separa los eventos SSE completos de un texto acumulado. Cada evento termina
+ * en una línea en blanco; lo que quede sin cerrar vuelve como `resto` para
+ * unirlo al siguiente trozo. Los comentarios (`: latido`) y los bloques sin
+ * `data:` o con JSON incompleto se ignoran.
+ */
+export function extraerEventosSse(pendiente: string): { eventos: EventoIA[]; resto: string } {
+  const bloques = pendiente.split('\n\n');
+  const resto = bloques.pop() ?? '';
+  const eventos: EventoIA[] = [];
+  for (const bloque of bloques) {
+    const linea = bloque.split('\n').find((texto) => texto.startsWith('data: '));
+    if (!linea) continue;
+    try {
+      eventos.push(JSON.parse(linea.slice(6)) as EventoIA);
+    } catch {
+      /* un bloque malformado se ignora; el siguiente trae el evento entero */
+    }
+  }
+  return { eventos, resto };
+}
+
+/**
+ * Descarga un resultado del asistente que el servidor conserva por `consulta_id`:
+ * la tabla del asistente en Excel, la presentación, o el listado de empresas con
+ * el formato estándar de la sección de consulta. Devuelve el nombre del archivo.
+ */
+export async function exportarIA(formato: 'excel' | 'pptx' | 'empresas', consultaId: string, sesionId = ''): Promise<string> {
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(`/api/ia/exportar/${formato}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': sesionId },
+      body: JSON.stringify({ consulta_id: consultaId, sesion_id: sesionId }),
+    });
+  } catch {
+    throw new ErrorApi('No hay conexión con el servidor. Verifique su red e intente de nuevo.', 0);
+  }
   if (!respuesta.ok) throw await leerError(respuesta, 'No fue posible preparar el archivo.');
   const contenido = await respuesta.blob();
   const cabecera = respuesta.headers.get('X-Export-Filename') ?? '';
-  const nombre = cabecera ? decodeURIComponent(cabecera) : `asistente.${formato === 'excel' ? 'xlsx' : 'pptx'}`;
-  const url = URL.createObjectURL(contenido);
-  const enlace = document.createElement('a');
-  enlace.href = url;
-  enlace.download = nombre;
-  document.body.appendChild(enlace);
-  enlace.click();
-  enlace.remove();
-  URL.revokeObjectURL(url);
+  const nombre = cabecera ? decodeURIComponent(cabecera) : `asistente.${formato === 'pptx' ? 'pptx' : 'xlsx'}`;
+  entregarArchivo(contenido, nombre);
+  return nombre;
 }

@@ -1,12 +1,11 @@
 # Variables de entorno en Railway
 
 Todo lo que hay que configurar en **Railway → su servicio → pestaña Variables**
-para que el aplicativo funcione, incluido el asistente de análisis.
+para que el aplicativo funcione, incluido el asistente de análisis. El servicio
+actual es `https://tejidoempresarialasistente-production.up.railway.app/`.
 
-**Nada de esto cambia respecto al despliegue que ya tiene funcionando.** El
-asistente no pide ninguna credencial nueva: firma la API de Cortex con la misma
-llave RSA. Si va a crear un servicio nuevo desde el repositorio nuevo, esta es la
-lista completa que hay que copiar.
+**El asistente no pide ninguna credencial nueva**: firma la API de Cortex con
+la misma llave RSA. La versión 3.5.0 tampoco añade variables obligatorias.
 
 ---
 
@@ -19,7 +18,7 @@ lista completa que hay que copiar.
 | `SF_DATABASE` | `APP_SEGMENTACION_EXPORTACIONES` | |
 | `SF_SCHEMA` | `SEGMENTACION` | |
 | `SF_WAREHOUSE` | `APPS_WH` | |
-| `SF_ROLE` | `APP_SEGMENTACION_EXPORTACIONES` | Es el rol que necesita los dos permisos de Cortex (ver `ASISTENTE.md`). |
+| `SF_ROLE` | `APP_SEGMENTACION_EXPORTACIONES` | Es el rol que necesita los permisos de Cortex (ver `ASISTENTE.md` §3). |
 | `SF_PRIVATE_KEY_B64_1` | La llave privada en Base64 | Ver abajo cómo generarla. En una sola línea. |
 
 **Cómo obtener `SF_PRIVATE_KEY_B64_1`.** En PowerShell, en la carpeta donde está
@@ -30,7 +29,7 @@ el archivo `.der`:
 ```
 
 Pegue el resultado sin comillas. Si al pegar queda en varias líneas no importa:
-el aplicativo tolera espacios y saltos desde la versión 3.3.0.
+el aplicativo tolera espacios y saltos.
 
 ---
 
@@ -38,9 +37,9 @@ el aplicativo tolera espacios y saltos desde la versión 3.3.0.
 
 | Variable | Valor sugerido | Para qué |
 |---|---|---|
-| `APP_BASIC_USER` | `procolombia` | Pide usuario y contraseña al entrar. **Configúrelas**: las descargas incluyen correo, teléfono y dirección de empresas reales, y hoy el enlace es público. |
+| `APP_BASIC_USER` | `procolombia` | Pide usuario y contraseña al entrar. Hoy el acceso está abierto por decisión del propietario; las descargas incluyen correo, teléfono y dirección de empresas reales. El README explica el paso a paso («Activar usuario y contraseña»). |
 | `APP_BASIC_PASSWORD` | Una contraseña larga que usted elija | Las dos van juntas: si configura una sola, el aplicativo responde 503 a propósito. |
-| `PUBLIC_ORIGIN` | `https://<su-dominio>.up.railway.app` | Sólo para las tarjetas al compartir el enlace. |
+| `PUBLIC_ORIGIN` | `https://tejidoempresarialasistente-production.up.railway.app` | Sólo para las tarjetas al compartir el enlace. |
 
 ---
 
@@ -48,49 +47,44 @@ el aplicativo tolera espacios y saltos desde la versión 3.3.0.
 
 | Variable | Valor por defecto | Cuándo tocarla |
 |---|---|---|
-| `APP_ENV` | `production` (lo pone el Dockerfile) | `development` habilita `/api/docs`. No lo use en producción. |
-| `APP_DEMO_MODE` | ausente = `false` | `true` muestra 14 empresas de ejemplo sin tocar Snowflake. Útil para revisar la interfaz. **Con `true` el asistente se desactiva.** |
-| `APP_DIAG_TOKEN` | vacío | Permite abrir el diagnóstico sin contraseña: `/estado?token=EL_VALOR`. Innecesaria si configuró `APP_BASIC_USER`/`APP_BASIC_PASSWORD`. |
-| `EXPORT_MAX_ROWS` | `5000` | Máximo de empresas por archivo de Excel. |
-| `EXPORT_INCLUDE_CONTACT_FIELDS` | `true` | `false` quita dirección, teléfono, correo y representante legal de las descargas. |
+| `APP_ENV` | `production` (lo pone el Dockerfile) | `development` habilita `/api/docs` y abre el diagnóstico. No lo use en producción. |
+| `APP_DEMO_MODE` | ausente = `false` | `true` muestra 14 empresas de ejemplo sin tocar Snowflake. **Con `true` el asistente se desactiva.** |
+| `APP_DIAG_TOKEN` | vacío | Permite abrir el diagnóstico sin contraseña: `/estado?token=EL_VALOR` (o cabecera `X-Diag-Token`). Innecesaria si configuró `APP_BASIC_USER`/`APP_BASIC_PASSWORD`. |
+| `EXPORT_MAX_ROWS` | `5000` | Máximo de empresas por archivo de Excel (también para el listado del asistente). |
+| `EXPORT_INCLUDE_CONTACT_FIELDS` | `true` | `false` quita dirección, teléfono, correo y representante legal de las descargas, las fichas **y el asistente**. |
 | `MAX_REQUEST_BYTES` | `2000000` | Tamaño máximo de una petición. |
 | `LOG_LEVEL` | `INFO` | `DEBUG` para más detalle en los registros de Railway. |
 | `SF_PRIVATE_KEY_PASSPHRASE_1` | vacío | Sólo si la llave privada está cifrada. |
-| `SF_PRIVATE_KEY_B64_2` · `SF_PRIVATE_KEY_PASSPHRASE_2` | vacías | Llave de respaldo para rotar sin cortar el servicio. **No configure la 2 si su pública no está registrada en Snowflake**: el failover hacia ella sólo produce errores 401. |
+| `SF_PRIVATE_KEY_B64_2` · `SF_PRIVATE_KEY_PASSPHRASE_2` | vacías | Llave de respaldo para rotar sin cortar el servicio. **No configure la 2 si su pública no está registrada en Snowflake**: el failover hacia ella sólo produce errores 401. En el servicio actual está configurada; si no la usa, retírela. |
 | `SF_LOGIN_TIMEOUT` · `SF_NETWORK_TIMEOUT` | `30` · `60` | Segundos. Sólo si su red es especialmente lenta. |
+| `SF_STATEMENT_TIMEOUT` | `300` | Segundos que Snowflake da a cualquier sentencia del aplicativo (incluida la redacción). |
 
 ---
 
 ## 4 · Opcionales del asistente — todas tienen el valor correcto por defecto
 
-No hace falta configurarlas. Están documentadas por si algún día cambia el
-modelo semántico o el modelo de redacción.
-
 | Variable | Valor por defecto | Cuándo tocarla |
 |---|---|---|
 | `SF_SEMANTIC_VIEW` | `APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION.TEJIDO_EMPRESARIAL_SEGMENTACION` | Si despliega el modelo semántico con otro nombre. |
-| `SF_CORTEX_MODEL` | `claude-3-5-sonnet` | Sólo afecta a las 2-5 frases del resumen: la SQL la genera Cortex Analyst y las cifras las verifica el código. Para elegir uno más rápido y barato, mida con `snowflake/02_comparar_modelos.sql`. |
+| `SF_CORTEX_MODEL` | `claude-3-5-sonnet` | Sólo afecta a las 2-5 frases del resumen. Para elegir uno más rápido o barato, mida con `snowflake/02_comparar_modelos.sql`. Si el diagnóstico dice que el modelo no está disponible en la región, cámbielo aquí. |
 | `SF_ALLOWED_SCHEMAS` | `APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION,APP_SEGMENTACION_EXPORTACIONES.PUBLIC` | Si el asistente debe poder leer otro esquema. |
 | `SF_HOST` | derivado de `SF_ACCOUNT` | Sólo si su cuenta usa un dominio distinto de `<SF_ACCOUNT>.snowflakecomputing.com`. |
 | `IA_MAX_ROWS` | `5000` | Tope de filas que trae una consulta del asistente. |
-| `IA_MAX_ROWS_CLIENT` | `500` | Filas que viajan al navegador (el Excel trae todas). |
-| `IA_ANALYST_TIMEOUT` | `90` | Segundos de espera a Cortex Analyst. |
+| `IA_MAX_ROWS_CLIENT` | `500` | Filas que viajan al navegador (las descargas traen todas). |
+| `IA_ANALYST_TIMEOUT` | `45` | Segundos de espera a Cortex Analyst por llamada. |
+| `IA_HISTORY_TURNS` | `4` | Mensajes previos que se reenvían a Analyst (4 = dos preguntas anteriores). |
+| `IA_RESULT_CAPACITY` · `IA_RESULT_TTL` | `50` · `1800` | Cuántos resultados conserva el servidor para descargar y por cuántos segundos. |
+| `NITS_EJEMPLO` | `890903938,811000740,890912462` | NIT de ejemplo en la consulta, el lote y la pregunta sugerida. |
+| `ASISTENTE_LOG_TABLE` · `ASISTENTE_DOWNLOAD_TABLE` | `…SEGUIMIENTO.ASISTENTE_CONSULTAS` · `…SEGUIMIENTO.ASISTENTE_DESCARGAS` | Sólo si crea las tablas de métricas con otro nombre. |
 
 ---
 
 ## 5 · Lo que NO se configura en Railway
 
-Los dos permisos del asistente van **en Snowflake**, no aquí:
-
-```sql
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE APP_SEGMENTACION_EXPORTACIONES;
-
-GRANT SELECT ON SEMANTIC VIEW
-  APP_SEGMENTACION_EXPORTACIONES.SEGMENTACION.TEJIDO_EMPRESARIAL_SEGMENTACION
-  TO ROLE APP_SEGMENTACION_EXPORTACIONES;
-```
-
-Están listos en `snowflake/01_permisos_asistente.sql`, con sus verificaciones.
+Los permisos y las tablas del asistente van **en Snowflake**, no aquí. En
+orden: `snowflake/01_permisos_asistente.sql`, `snowflake/03_telemetria_asistente.sql`,
+`snowflake/04_minimo_privilegio.sql` y el redespliegue del YAML (`snowflake/LEEME.md`).
+El detalle está en `ASISTENTE.md` §3.
 
 ---
 
@@ -107,8 +101,7 @@ SF_SCHEMA=SEGMENTACION
 SF_WAREHOUSE=APPS_WH
 SF_ROLE=APP_SEGMENTACION_EXPORTACIONES
 SF_PRIVATE_KEY_B64_1=<la llave en Base64, en una sola línea>
-APP_BASIC_USER=procolombia
-APP_BASIC_PASSWORD=<una contraseña larga>
+PUBLIC_ORIGIN=https://tejidoempresarialasistente-production.up.railway.app
 ```
 
 Railway inyecta `PORT` por su cuenta: **no la configure**.
@@ -117,12 +110,15 @@ Railway inyecta `PORT` por su cuenta: **no la configure**.
 
 ## 7 · Cómo comprobar que quedó bien
 
-1. Abra `https://<su-dominio>.up.railway.app/estado`. Debe decir **Datos reales**.
+1. Abra `https://tejidoempresarialasistente-production.up.railway.app/estado`.
+   Debe decir **Datos reales**. Pulse **Ejecutar diagnóstico**: todos los pasos
+   en verde, incluidos `vista_semantica`, `tabla_asistente_log` y `cortex_complete`.
 2. Vaya a **Consultar** y haga una búsqueda: los filtros deben traer
-   departamentos y cadenas reales.
+   departamentos y cadenas reales; los chips de NIT muestran 890903938,
+   811000740 y 890912462.
 3. Vaya a **Asistente** y pulse la primera pregunta sugerida.
 4. Descargue el Excel de esa respuesta.
 
 Si algo falla, la página `/estado` dice en qué paso y qué corregir; el
 procedimiento está en `DIAGNOSTICO_RAILWAY.md` y, para el asistente, en
-`ASISTENTE.md`.
+`ASISTENTE.md` §5.

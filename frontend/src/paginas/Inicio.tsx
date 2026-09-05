@@ -316,14 +316,15 @@ export default function Inicio() {
               <p className="kicker">Novedad · Asistente de análisis</p>
               <h2 id="t-asistente">
                 <span className="marcador-nucleo" aria-hidden="true" />
-                Pregunte en español y reciba la tabla, la gráfica y el archivo
+                Pregunte en español y reciba la respuesta, la tabla y el archivo
               </h2>
               <span className="cinta" aria-hidden="true" />
               <p className="mt-16">
                 «¿Cuántas empresas hay por departamento y tamaño?», «¿cuáles son los principales sectores por cadena
                 productiva en Antioquia?», «pymes de Agroalimentos que exportan y no han sido atendidas». El asistente
                 arma la consulta, la ejecuta en Snowflake y le entrega la respuesta con la consulta que la respalda,
-                lista para descargar en Excel o en presentación.
+                lista para descargar en Excel o en presentación; la gráfica, cuando usted la pida. Recuerda sus
+                últimas preguntas, así que puede refinar hasta llegar al listado de empresas que necesita.
               </p>
               <p className="destacado-ia__aviso">
                 La información la genera una inteligencia artificial y puede contener errores: verifique las cifras

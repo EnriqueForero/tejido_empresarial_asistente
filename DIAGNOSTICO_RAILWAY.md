@@ -3,7 +3,7 @@
 Escrita para hacerse paso a paso, sin conocimientos de despliegue. Su dirección
 pública es:
 
-**https://tejidoempresarialreact-production.up.railway.app**
+**https://tejidoempresarialasistente-production.up.railway.app**
 
 Cada vez que esta guía diga «abra el aplicativo», use ese enlace.
 
@@ -13,7 +13,7 @@ Cada vez que esta guía diga «abra el aplicativo», use ese enlace.
 
 Abra:
 
-**https://tejidoempresarialreact-production.up.railway.app/estado**
+**https://tejidoempresarialasistente-production.up.railway.app/estado**
 
 Esa página se llama **Estado del aplicativo** y responde en una frase si está
 usando datos reales o de ejemplo. También la alcanza desde el menú superior: la
@@ -122,7 +122,7 @@ APP_DIAG_TOKEN = (una palabra larga cualquiera, por ejemplo revision-2026-tejido
 
 Y luego abra directamente, con su palabra al final:
 
-`https://tejidoempresarialreact-production.up.railway.app/estado?token=revision-2026-tejido`
+`https://tejidoempresarialasistente-production.up.railway.app/estado?token=revision-2026-tejido`
 
 Con ese enlace el diagnóstico se ejecuta solo.
 
@@ -136,6 +136,9 @@ Con ese enlace el diagnóstico se ejecuta solo.
 | **Sesión establecida con Snowflake** | Snowflake rechazó la conexión. Tres causas típicas, y el mensaje de error dice cuál: la llave pública no está registrada en el usuario de servicio (se corrige en Snowflake con `ALTER USER … SET RSA_PUBLIC_KEY=…`); el rol o el warehouse no existen o el usuario no los tiene asignados; o una política de red de Snowflake bloquea la dirección IP de Railway (el mensaje dice «not allowed to access»). Este último punto lo resuelve el administrador de Snowflake. |
 | **Filtros generales / Filtros de exportaciones / Tabla de empresas / Tabla de bienes** | El rol de Snowflake no tiene permiso de lectura sobre esa tabla. El administrador debe ejecutar `GRANT SELECT ON <la tabla que aparece> TO ROLE APP_SEGMENTACION_EXPORTACIONES;` |
 | **Tabla de auditoría de eventos** | Sólo afecta el registro de uso. El aplicativo funciona igual. |
+| **Vista semántica del asistente** | El rol no ve el modelo semántico que usa el asistente. Ejecute `snowflake/01_permisos_asistente.sql` en Snowsight (ver `ASISTENTE.md` §3). El resto del aplicativo funciona igual. |
+| **Tabla de métricas del asistente** | No existen las tablas de métricas. Ejecute `snowflake/03_telemetria_asistente.sql`. El asistente responde igual; sólo deja de registrar. |
+| **Redacción con SNOWFLAKE.CORTEX.COMPLETE** | La inteligencia artificial que redacta el resumen no responde: el asistente entrega el resumen automático de los datos con una pastilla ámbar. Lea el error del paso: si habla de *privileges*, falta el `GRANT` de `SNOWFLAKE.CORTEX_USER` (`ASISTENTE.md` §3); si dice que el modelo no existe o no está en la región, cambie la variable `SF_CORTEX_MODEL` en Railway (`snowflake/02_comparar_modelos.sql` ayuda a elegir). |
 
 Después de cada corrección: espere el redespliegue de Railway y pulse
 **«Probar la conexión ahora»** en la página de estado.
@@ -153,9 +156,11 @@ Después de cada corrección: espere el redespliegue de Railway y pulse
 6. Abra la ficha de una empresa desde la tabla.
 7. Descargue el Excel y ábralo.
 8. Abra el mismo enlace en su celular.
-9. Entre a **Asistente** y pulse la primera pregunta sugerida. Si dice que falta
-   un permiso de Cortex, siga [`ASISTENTE.md`](ASISTENTE.md): son dos `GRANT` en
-   Snowflake y no hace falta cambiar nada en Railway.
+9. Entre a **Asistente** y pulse la primera pregunta sugerida. Debe ver la tabla
+   en menos de 15 segundos y, debajo del texto, la pastilla verde «Cifras
+   verificadas contra la tabla». Si la pastilla es ámbar o falta un permiso,
+   siga [`ASISTENTE.md`](ASISTENTE.md) §5: son permisos en Snowflake y no hace
+   falta cambiar nada en Railway.
 
 ---
 
@@ -165,11 +170,11 @@ Estas direcciones devuelven texto técnico; sirven para enviarle el resultado a
 alguien de sistemas:
 
 - Estado rápido, no pide contraseña:
-  `https://tejidoempresarialreact-production.up.railway.app/api/health`
+  `https://tejidoempresarialasistente-production.up.railway.app/api/health`
 - Prueba real contra Snowflake:
-  `https://tejidoempresarialreact-production.up.railway.app/api/health?deep=true`
+  `https://tejidoempresarialasistente-production.up.railway.app/api/health?deep=true`
 - Diagnóstico completo (requiere la protección del paso 4):
-  `https://tejidoempresarialreact-production.up.railway.app/api/diagnostico`
+  `https://tejidoempresarialasistente-production.up.railway.app/api/diagnostico`
 
 También puede ver los registros del servicio en Railway: su proyecto → el
 servicio → pestaña **Deployments** → **View Logs**. Busque las líneas que

@@ -7,6 +7,8 @@ una instrucción concreta.
 import importlib
 
 import pytest
+
+import backend.comun
 from fastapi.testclient import TestClient
 
 from backend.database import Session as _SesionSnowpark
@@ -24,6 +26,25 @@ VARIABLES_SNOWFLAKE = [
 ]
 
 
+def _recargar():
+    """Recarga los modulos que leen el entorno al importarse, en orden de dependencia."""
+    import backend.comun
+    import backend.database
+    import backend.main
+    import backend.middleware
+    import backend.routers.asistente
+    import backend.routers.empresas
+    import backend.routers.recursos
+    import backend.routers.salud
+
+    for modulo in (
+        backend.database, backend.comun, backend.middleware, backend.routers.asistente,
+        backend.routers.salud, backend.routers.empresas, backend.routers.recursos,
+    ):
+        importlib.reload(modulo)
+    return importlib.reload(backend.main)
+
+
 def _app_en_produccion(monkeypatch, **variables: str):
     """Recarga la API como si estuviera en Railway (sin modo demostración)."""
     monkeypatch.setenv("APP_DEMO_MODE", "false")
@@ -32,11 +53,7 @@ def _app_en_produccion(monkeypatch, **variables: str):
         monkeypatch.delenv(nombre, raising=False)
     for nombre, valor in variables.items():
         monkeypatch.setenv(nombre, valor)
-    import backend.database
-    import backend.main
-
-    importlib.reload(backend.database)
-    modulo = importlib.reload(backend.main)
+    modulo = _recargar()
     return modulo, TestClient(modulo.app)
 
 
@@ -48,11 +65,7 @@ def restaurar_modo_demostracion():
 
     os.environ["APP_DEMO_MODE"] = "true"
     os.environ["APP_ENV"] = "development"
-    import backend.database
-    import backend.main
-
-    importlib.reload(backend.database)
-    importlib.reload(backend.main)
+    _recargar()
 
 
 def test_cerrado_si_el_despliegue_no_esta_protegido(monkeypatch) -> None:
@@ -143,7 +156,7 @@ def test_health_reporta_error_despues_de_un_fallo_de_conexion(monkeypatch) -> No
     assert cliente.get("/api/health").json()["data_connection"] == "configured"
 
     # Se simula el fallo que registraría un intento real contra Snowflake.
-    modulo.snowflake.ultimo_error = "290404 (08001): 404 Not Found"
+    backend.comun.snowflake.ultimo_error = "290404 (08001): 404 Not Found"
     cuerpo = cliente.get("/api/health").json()
     assert cuerpo["data_connection"] == "error"
     assert cuerpo["snowflake"]["connection_error"] is True

@@ -20,6 +20,8 @@ jobs:
       - name: Instalar dependencias
         # La misma lista que usa el build de validación del notebook.
         run: pip install -r requirements-test.txt
+      - name: Revisión estática (ruff · sintaxis y pyflakes)
+        run: ruff check backend tests scripts
       - name: Pruebas (modo demostración)
         env:
           APP_DEMO_MODE: 'true'
@@ -39,6 +41,9 @@ jobs:
       - name: Instalar dependencias
         working-directory: frontend
         run: npm ci --no-audit --no-fund
+      - name: Pruebas de la interfaz (vitest)
+        working-directory: frontend
+        run: npm test
       - name: Compilar (tipos + producción)
         working-directory: frontend
         run: npm run build

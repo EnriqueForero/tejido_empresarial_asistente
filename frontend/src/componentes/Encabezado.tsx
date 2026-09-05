@@ -12,7 +12,7 @@ import { InsigniaEstado, useEstadoDatos } from './EstadoConexion';
 export const RUTAS: Array<{ a: string; t: string; d: string }> = [
   { a: '/', t: 'Inicio', d: 'El aplicativo en una mirada' },
   { a: '/consultar', t: 'Consultar', d: 'Filtros, razón social, NIT y lotes' },
-  { a: '/asistente', t: 'Asistente', d: 'Preguntas en español, tablas y gráficas' },
+  { a: '/asistente', t: 'Asistente', d: 'Preguntas en español, tablas y listados' },
   { a: '/glosario', t: 'Glosario', d: 'Qué significa cada variable' },
   { a: '/metodologia', t: 'Metodología', d: 'Fuentes, cortes, alcance y límites' },
 ];

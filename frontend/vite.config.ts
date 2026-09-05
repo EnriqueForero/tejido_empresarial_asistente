@@ -2,7 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // El frontend se sirve desde el mismo origen que la API (FastAPI). En desarrollo,
-// Vite redirige /api al servidor local de uvicorn.
+// Vite redirige /api al servidor local de uvicorn. Las pruebas (vitest) se
+// configuran en vitest.config.ts, que reutiliza esta configuración.
 export default defineConfig({
   plugins: [react()],
   server: {

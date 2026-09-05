@@ -1,0 +1,19 @@
+[tool.ruff]
+# Sólo lo que atrapa errores reales sin obligar a reformatear el código
+# existente: sintaxis (E9) y pyflakes (F: nombres sin definir, imports sin
+# usar, f-strings sin marcadores). El estilo se conserva como está.
+line-length = 140
+target-version = "py310"
+extend-exclude = ["legado_streamlit", "notebooks", "frontend"]
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+# La raíz (para `import backend`) y la carpeta de pruebas (para `import dobles`)
+# entran en la ruta de módulos ANTES de recoger las pruebas. Sin esto, la batería
+# sólo funciona si el directorio de trabajo es la raíz del proyecto: así falló la
+# publicación de 3.5.0 en Colab.
+pythonpath = [".", "tests"]

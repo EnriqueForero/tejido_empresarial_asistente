@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -108,33 +109,80 @@ class SearchRequest(BaseModel):
         return f"{active} criterio(s) de filtro" if active else "toda la base empresarial"
 
 
+_ID_CONSULTA = re.compile(r"^[0-9a-f]{12}$")
+_ID_SESION = re.compile(r"^[A-Za-z0-9_-]{0,64}$")
+_PAPELES = {"user", "analyst"}
+_BLOQUES = {"text", "sql", "suggestions"}
+
+
+def _validar_turno(turno: dict[str, Any]) -> dict[str, Any]:
+    """Un turno del historial en el formato de Cortex Analyst, acotado en forma y tamaño."""
+    if not isinstance(turno, dict) or turno.get("role") not in _PAPELES:
+        raise ValueError("Cada turno del historial debe tener role «user» o «analyst».")
+    contenido = turno.get("content")
+    if not isinstance(contenido, list) or not 1 <= len(contenido) <= 6:
+        raise ValueError("Cada turno del historial debe traer entre 1 y 6 bloques de contenido.")
+    limpio: list[dict[str, Any]] = []
+    for bloque in contenido:
+        if not isinstance(bloque, dict) or bloque.get("type") not in _BLOQUES:
+            raise ValueError("Bloque de historial no reconocido.")
+        tipo = bloque["type"]
+        if tipo == "text":
+            texto = str(bloque.get("text", ""))[:2000]
+            limpio.append({"type": "text", "text": texto})
+        elif tipo == "sql":
+            sentencia = str(bloque.get("statement", ""))[:20000]
+            limpio.append({"type": "sql", "statement": sentencia})
+        else:
+            sugerencias = [str(s)[:300] for s in (bloque.get("suggestions") or [])][:10]
+            limpio.append({"type": "suggestions", "suggestions": sugerencias})
+    return {"role": turno["role"], "content": limpio}
+
+
 class PreguntaIA(BaseModel):
     """Pregunta en lenguaje natural para el asistente de análisis."""
 
     pregunta: str = Field(default="", max_length=2000)
-    #: Turnos previos en el formato de Cortex Analyst, para dar continuidad.
-    historial: list[dict[str, Any]] = Field(default_factory=list)
+    #: Identificadores de las respuestas anteriores del hilo: el servidor
+    #: reconstruye con ellos el historial real que devolvió Cortex Analyst.
+    consulta_ids: list[str] = Field(default_factory=list, max_length=6)
+    #: Historial en el formato de Analyst, como respaldo si el servidor ya no
+    #: conserva esas respuestas (pestaña antigua o resultado vencido).
+    historial: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
+    #: Identificador de la pestaña, sólo para la telemetría.
+    sesion_id: str = Field(default="", max_length=64)
 
     @field_validator("pregunta")
     @classmethod
     def limpiar_pregunta(cls, valor: str) -> str:
         return valor.strip()
 
+    @field_validator("consulta_ids")
+    @classmethod
+    def validar_ids(cls, valores: list[str]) -> list[str]:
+        for valor in valores:
+            if not _ID_CONSULTA.match(str(valor)):
+                raise ValueError("Identificador de consulta no válido.")
+        return [str(valor) for valor in valores]
 
-class ExportacionIA(BaseModel):
-    """Resultado ya obtenido por el asistente, listo para descargar."""
+    @field_validator("historial")
+    @classmethod
+    def validar_historial(cls, turnos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [_validar_turno(turno) for turno in turnos]
 
-    pregunta: str = Field(default="", max_length=2000)
-    respuesta: str = Field(default="", max_length=8000)
-    sql: str = Field(default="", max_length=20000)
-    columnas: list[str] = Field(default_factory=list)
-    filas: list[list[Any]] = Field(default_factory=list)
-    n_filas: int = Field(default=0, ge=0)
+    @field_validator("sesion_id")
+    @classmethod
+    def validar_sesion(cls, valor: str) -> str:
+        return valor if _ID_SESION.match(valor) else ""
 
-    @model_validator(mode="after")
-    def validar_tabla(self) -> "ExportacionIA":
-        if len(self.columnas) > 200:
-            raise ValueError("Demasiadas columnas para exportar.")
-        if len(self.filas) > 20000:
-            raise ValueError("Demasiadas filas para exportar.")
-        return self
+
+class DescargaIA(BaseModel):
+    """Descarga de un resultado que el servidor ya tiene guardado."""
+
+    consulta_id: str = Field(pattern=r"^[0-9a-f]{12}$")
+    sesion_id: str = Field(default="", max_length=64)
+
+    @field_validator("sesion_id")
+    @classmethod
+    def validar_sesion(cls, valor: str) -> str:
+        return valor if _ID_SESION.match(valor) else ""

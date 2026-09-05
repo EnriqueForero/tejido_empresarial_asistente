@@ -49,6 +49,20 @@ _ANIO = re.compile(r"(?<!\d)(19|20)\d{2}(?!\d)")
 _PERIODO = re.compile(r"(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z_]*[ _-]*(19|20)\d{2}", re.IGNORECASE)
 
 
+#: Palabras con las que el usuario pide ver una gráfica. La tabla es la respuesta
+#: por defecto; la gráfica se abre sola sólo si la pregunta la nombra.
+_PIDE_GRAFICA = re.compile(
+    r"\b(gr[aá]f[ií]c(?:[ao]s?|[aá](?:r|me|lo|la))|visualiza(?:r|ci[oó]n|me)?|"
+    r"diagrama|barras|l[ií]neas|evoluci[oó]n|tendencia|serie(?:s)?\s+(?:de\s+)?tiempo|comparativ[ao])\b",
+    re.IGNORECASE,
+)
+
+
+def pide_grafica(pregunta: str) -> bool:
+    """¿La pregunta pide de forma explícita una gráfica?"""
+    return bool(_PIDE_GRAFICA.search(pregunta or ""))
+
+
 def _es_numero(valor: Any) -> bool:
     return isinstance(valor, (int, float)) and not isinstance(valor, bool)
 

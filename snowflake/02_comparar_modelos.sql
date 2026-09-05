@@ -57,6 +57,23 @@ SELECT 'claude-3-7-sonnet' AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-3-7-sonn
 SELECT 'claude-4-sonnet'   AS MODELO, SNOWFLAKE.CORTEX.COMPLETE('claude-4-sonnet',   $PROMPT) AS RESPUESTA;
 
 -- =============================================================================
+-- 1b · La forma con opciones, que es la que usa el aplicativo
+-- =============================================================================
+-- El asistente llama a COMPLETE con un ARRAY de mensajes y un OBJECT de opciones
+-- (max_tokens y temperature): así acota la salida y hace la respuesta
+-- reproducible. Si ESTA sentencia falla con «invalid argument types», la
+-- cuenta no admite esa firma y el aplicativo usa la forma simple, una sola vez.
+-- Si falla con «Insufficient privileges» o «unknown model», fallará igual en
+-- las dos formas: ese es el error que hay que corregir. /api/diagnostico
+-- (paso «cortex_complete») ejecuta exactamente esta prueba.
+
+SELECT SNOWFLAKE.CORTEX.COMPLETE(
+  'claude-3-5-sonnet',
+  TO_ARRAY(PARSE_JSON('[{"role": "user", "content": "Responde únicamente con la palabra OK."}]')),
+  TO_OBJECT(PARSE_JSON('{"temperature": 0, "max_tokens": 8}'))
+) AS RESPUESTA_CON_OPCIONES;
+
+-- =============================================================================
 -- 2 · Cómo decidir
 -- =============================================================================
 -- Lea las respuestas y descarte los modelos que:

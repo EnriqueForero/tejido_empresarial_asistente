@@ -15,7 +15,8 @@ tables:
   - name: EMPRESAS
     description: >-
       Representa el universo de empresas formales de Colombia con matrícula mercantil vigente.
-      Grano: una fila por empresa identificada por NIT (1,68 millones de empresas). Cada fila reúne
+      Grano: una fila por empresa y sede; el NIT identifica a la empresa y se repite en las pocas que
+      tienen más de una sede (1,68 millones de empresas). Cada fila reúne
       la identificación de la empresa, su ubicación, actividad económica CIIU, tamaño, indicadores
       financieros y de empleo, su perfil exportador de los últimos 5 años (producto principal,
       país destino principal y valores exportados por año), la atención recibida de ProColombia y
@@ -26,20 +27,21 @@ tables:
       database: APP_SEGMENTACION_EXPORTACIONES
       schema: SEGMENTACION
       table: TEJIDO_EMPRESARIAL_COMPLETO_BASE_MUNICIPIOS_P
-    primary_key:
-      columns: [NIT]
+    # Sin primary_key a propósito: unas decenas de empresas tienen más de una fila
+    # (sedes distintas), así que NIT no identifica una fila. Contar empresas es
+    # siempre COUNT(DISTINCT NIT); ver custom_instructions.
 
     dimensions:
       # ---------- Identificación ----------
       - name: NIT
         expr: NIT
         data_type: VARCHAR
-        unique: true
         description: >-
-          Número de Identificación Tributaria de la empresa, sin dígito de verificación. Identifica de
-          forma única a cada empresa y es la llave para contar empresas (usar COUNT DISTINCT).
+          Número de Identificación Tributaria de la empresa, sin dígito de verificación. Es la llave para
+          contar empresas, SIEMPRE con COUNT(DISTINCT NIT): unas decenas de empresas aparecen en más de
+          una fila (sedes distintas), de modo que COUNT(*) cuenta filas y no empresas.
         synonyms: [nit, identificacion tributaria, id empresa, numero de identificacion, rut]
-        sample_values: ["830046582", "830068604", "37196144"]
+        sample_values: ["890903938", "811000740", "890912462"]
       - name: DIGITO_VERIFICACION
         expr: DIGITO_VERIFICACION
         data_type: VARCHAR
@@ -62,7 +64,7 @@ tables:
           Tamaño de la empresa según clasificación oficial (Decreto 957 de 2019, por ingresos).
           Valores: 'Micro' (94%), 'Pequeña', 'Mediana', 'Grande', 'No determinado'.
           Pyme = Pequeña + Mediana. MiPyme = Micro + Pequeña + Mediana.
-        synonyms: [tamaño, tamaño de empresa, clasificacion por tamaño, micro, pequeña, mediana, grande, pyme, mipyme]
+        synonyms: [tamaño, tamaño de empresa, clasificacion por tamaño, micro, pequeña, mediana, grande]
         sample_values: ["Micro", "Pequeña", "Mediana", "Grande"]
       - name: ORGANIZACION_JURIDICA
         expr: ORGANIZACION_JURIDICA
@@ -96,7 +98,7 @@ tables:
           permite ordenar. Valores: 'A. 0 - 5 años', 'B. 6 - 10 años', 'C. 11 - 15 años',
           'D. 16 - 20 años', 'E. 21 - 25 años', 'F. 26 - 30 años', 'G. 31 - 35 años',
           'H. 36 - 40 años', 'I. 41 - 45 años', 'J. 46 - 50 años', 'K. Más de 50 años', 'L. Sin clasificar'.
-        synonyms: [antiguedad, rango de antiguedad, años de existencia, edad de la empresa, madurez]
+        synonyms: [antiguedad, rango de antiguedad, años de existencia, madurez]
         sample_values: ["A. 0 - 5 años", "B. 6 - 10 años", "K. Más de 50 años"]
       - name: RANGO_INGRESOS
         expr: RANGO_INGRESOS
@@ -204,7 +206,7 @@ tables:
           Valores: 'Agroalimentos', 'Metalmecánica y Otras Industrias', 'Químicos y Ciencias de la Vida',
           'Sistema Moda', 'Industrias 4.0', 'Turismo', 'Logística e Infraestructura', 'Mineras',
           'Energía', 'CIIU no aplica categoría ProColombia' (56% de empresas, actividades fuera del
-          foco de promoción). Para la cadena de lo efectivamente exportado usar CADENA.
+          foco de promoción). Para la cadena de lo efectivamente exportado usar CADENA_EXPORTADA.
         synonyms: [cadena ciiu, cadena productiva por actividad, cadena por ciiu, cadena procolombia actividad]
         sample_values: ["Agroalimentos", "Sistema Moda", "Industrias 4.0", "CIIU no aplica categoría ProColombia"]
       - name: VALOR_AGREGADO_CIIU_1
@@ -234,40 +236,15 @@ tables:
         data_type: VARCHAR
         description: Cadena productiva de ProColombia asociada a la actividad secundaria (CIIU 2).
         synonyms: [cadena ciiu 2, cadena actividad secundaria]
-      - name: CIIU_3
-        expr: CIIU_3
-        data_type: VARCHAR
-        description: Código CIIU de la tercera actividad económica registrada. 'No determinado' si no tiene.
-        synonyms: [ciiu 3, tercera actividad]
-      - name: DESCRIPCION_CIIU_3
-        expr: DESCRIPCION_CIIU_3
-        data_type: VARCHAR
-        description: Descripción de la tercera actividad económica (CIIU 3).
-      - name: CADENA_CIIU_3
-        expr: CADENA_CIIU_3
-        data_type: VARCHAR
-        description: Cadena productiva de ProColombia asociada a la tercera actividad (CIIU 3).
-      - name: CIIU_4
-        expr: CIIU_4
-        data_type: VARCHAR
-        description: Código CIIU de la cuarta actividad económica registrada. 'No determinado' si no tiene.
-        synonyms: [ciiu 4, cuarta actividad]
-      - name: DESCRIPCION_CIIU_4
-        expr: DESCRIPCION_CIIU_4
-        data_type: VARCHAR
-        description: Descripción de la cuarta actividad económica (CIIU 4).
-      - name: CADENA_CIIU_4
-        expr: CADENA_CIIU_4
-        data_type: VARCHAR
-        description: Cadena productiva de ProColombia asociada a la cuarta actividad (CIIU 4).
       - name: CADENA_SEGMENTACION
         expr: CADENA_SEGMENTACION
         data_type: VARCHAR
         description: >-
-          Cadena productiva definitiva usada para la segmentación de ProColombia. Coincide con
-          CADENA_CIIU_1 salvo ajustes manuales (0,1% de casos). Mismos valores que CADENA_CIIU_1.
-          Es la columna preferida para segmentar empresas por cadena cuando la pregunta no distingue
-          entre actividad y exportación.
+          Cadena productiva definitiva usada para la segmentación de ProColombia, y la única que aplica a
+          TODAS las empresas: para las exportadoras es la cadena que más han exportado en los últimos
+          5 años; para las demás, la cadena asociada a su actividad económica principal (CADENA_CIIU_1).
+          Es la columna que hay que usar cuando la pregunta dice «cadena» o «cadena productiva» sin
+          distinguir entre actividad y exportación.
         synonyms: [cadena de segmentacion, cadena productiva, cadena procolombia, segmento, cadena]
         sample_values: ["Agroalimentos", "Metalmecánica y Otras Industrias", "Turismo", "Químicos y Ciencias de la Vida"]
       - name: FUENTES
@@ -317,15 +294,16 @@ tables:
           relevante para ProColombia. Valores: 'Sí' (10.528 empresas), 'No'.
         synonyms: [exportadora nme, exportadora no minero energetica, exportadora no minera]
         sample_values: ["Sí", "No"]
-      - name: CADENA
+      - name: CADENA_EXPORTADA
         expr: CADENA
         data_type: VARCHAR
         description: >-
           Cadena productiva de ProColombia del producto principal exportado (según posición arancelaria).
           Solo aplica a exportadoras; para las demás es 'No exportó ult. 5 años'. Valores: 'Agroalimentos',
           'Metalmecánica y Otras Industrias', 'Químicos y Ciencias de la Vida', 'Sistema Moda',
-          'Industrias 4.0', 'Mineras', 'Otros', 'No exportó ult. 5 años'.
-        synonyms: [cadena exportada, cadena del producto exportado, cadena de exportacion]
+          'Industrias 4.0', 'Mineras', 'Otros', 'No exportó ult. 5 años'. Usar SOLO cuando la pregunta
+          hable de la cadena de lo exportado; para «cadena» a secas usar CADENA_SEGMENTACION.
+        synonyms: [cadena exportada, cadena del producto exportado, cadena de exportacion, cadena de lo que exporta]
         sample_values: ["Agroalimentos", "Sistema Moda", "No exportó ult. 5 años"]
       - name: SECTOR
         expr: SECTOR
@@ -440,22 +418,6 @@ tables:
         sample_values: ["Sí", "No"]
 
       # ---------- Municipio (Base Municipios) ----------
-      - name: CODIGO_MUNICIPIO_BASE_MUNICIPIOS
-        expr: CODIGO_MUNICIPIO_BASE_MUNICIPIOS
-        data_type: VARCHAR
-        description: Código DANE del municipio usado para cruzar con la base de indicadores municipales. Equivale a COD_MUNICIPIO_EMP.
-      - name: MUNICIPIO_BASE_MUNICIPIOS
-        expr: MUNICIPIO_BASE_MUNICIPIOS
-        data_type: VARCHAR
-        description: Nombre del municipio en la base de indicadores municipales. Equivale a MUNICIPIO_EMP; preferir MUNICIPIO_EMP.
-      - name: CODIGO_DEPARTAMENTO_BASE_MUNICIPIOS
-        expr: CODIGO_DEPARTAMENTO_BASE_MUNICIPIOS
-        data_type: VARCHAR
-        description: Código DANE del departamento en la base de indicadores municipales. Equivale a COD_DEPARTAMENTO_EMP.
-      - name: DEPARTAMENTO_BASE_MUNICIPIOS
-        expr: DEPARTAMENTO_BASE_MUNICIPIOS
-        data_type: VARCHAR
-        description: Nombre del departamento en la base de indicadores municipales. Equivale a DEPARTAMENTO_EMP; preferir DEPARTAMENTO_EMP.
       - name: MENOR_200K_HABITANTES
         expr: MENOR_200K_HABITANTES
         data_type: VARCHAR
@@ -571,7 +533,7 @@ tables:
         expr: EXPO_ENE_MAY_2026
         data_type: FLOAT
         description: Valor exportado enero-mayo 2026 en dólares FOB (USD), último periodo disponible. Comparar con EXPO_ENE_MAY_2025.
-        synonyms: [exportaciones enero mayo 2026, año corrido 2026, exportaciones 2026, ultimo periodo]
+        synonyms: [exportaciones enero mayo 2026, ultimo periodo disponible]
 
       # ---------- CRM ProColombia por año ----------
       - name: NUMERO_NEGOCIOS_2023
@@ -739,12 +701,14 @@ tables:
         synonyms: [exportaciones totales 2023]
       - name: TOTAL_EXPO_2024
         expr: SUM(EXPO_2024)
-        description: Total exportado en 2024 en USD FOB. Último año completo.
-        synonyms: [exportaciones totales 2024, exportaciones ultimo año completo]
+        description: Total exportado en 2024 en USD FOB.
+        synonyms: [exportaciones totales 2024]
       - name: TOTAL_EXPO_2025
         expr: SUM(EXPO_2025)
-        description: Total exportado en 2025 en USD FOB.
-        synonyms: [exportaciones totales 2025]
+        description: >-
+          Total exportado en 2025 en USD FOB. Último año completo: es el periodo por defecto cuando la
+          pregunta no indica un año («cuánto exporta», «principales exportadoras»).
+        synonyms: [exportaciones totales 2025, exportaciones ultimo año completo, exportaciones del ultimo año, cuanto exporta, valor exportado]
       - name: TOTAL_EXPO_ENE_MAY_2025
         expr: SUM(EXPO_ENE_MAY_2025)
         description: Total exportado enero-mayo 2025 en USD FOB (base de comparación año corrido).
@@ -752,10 +716,10 @@ tables:
         expr: SUM(EXPO_ENE_MAY_2026)
         description: Total exportado enero-mayo 2026 en USD FOB (último periodo disponible).
         synonyms: [exportaciones año corrido 2026, exportaciones 2026]
-      - name: TOTAL_EXPO_5_ANOS
+      - name: TOTAL_EXPO_2021_2025
         expr: SUM(EXPO_2021 + EXPO_2022 + EXPO_2023 + EXPO_2024 + EXPO_2025)
-        description: Total acumulado exportado 2021-2025 en USD FOB (cinco años completos).
-        synonyms: [exportaciones acumuladas, total exportado ultimos 5 años, exportaciones historicas]
+        description: Total acumulado exportado 2021-2025 en USD FOB (los cinco años completos; «últimos 5 años»).
+        synonyms: [exportaciones acumuladas, total exportado ultimos 5 años, exportaciones historicas, exportaciones 2021 a 2025, ultimos cinco años]
       - name: VARIACION_EXPO_2024_2023_PCT
         expr: 100 * (SUM(EXPO_2024) - SUM(EXPO_2023)) / NULLIF(SUM(EXPO_2023), 0)
         description: Variación porcentual de las exportaciones 2024 frente a 2023.
@@ -820,11 +784,36 @@ tables:
       - name: TOTAL_OPORTUNIDADES_2025
         expr: SUM(NUMERO_OPORTUNIDADES_2025)
         description: Total de oportunidades compartidas por ProColombia en 2025.
+      - name: TOTAL_NEGOCIOS_2023
+        expr: SUM(NUMERO_NEGOCIOS_2023)
+        description: Total de negocios reportados con ProColombia en 2023.
+      - name: TOTAL_SERVICIOS_2023
+        expr: SUM(NUMERO_SERVICIOS_2023)
+        description: Total de servicios prestados por ProColombia en 2023.
+      - name: TOTAL_OPORTUNIDADES_2023
+        expr: SUM(NUMERO_OPORTUNIDADES_2023)
+        description: Total de oportunidades compartidas por ProColombia en 2023.
+      - name: TOTAL_NEGOCIOS_ENE_JUN_2026
+        expr: SUM(NUMERO_NEGOCIOS_ENE_JUN_2026)
+        description: Total de negocios reportados con ProColombia enero-junio 2026 (último periodo disponible).
+        synonyms: [negocios 2026, negocios año corrido]
+      - name: TOTAL_SERVICIOS_ENE_JUN_2026
+        expr: SUM(NUMERO_SERVICIOS_ENE_JUN_2026)
+        description: Total de servicios prestados por ProColombia enero-junio 2026 (último periodo disponible).
+        synonyms: [servicios 2026, servicios año corrido]
+      - name: TOTAL_OPORTUNIDADES_ENE_JUN_2026
+        expr: SUM(NUMERO_OPORTUNIDADES_ENE_JUN_2026)
+        description: Total de oportunidades compartidas por ProColombia enero-junio 2026 (último periodo disponible).
+        synonyms: [oportunidades 2026, oportunidades año corrido]
+      - name: NUMERO_EXPORTADORAS_NME
+        expr: COUNT(DISTINCT CASE WHEN EXPORTADORA_NME_ACTIVIDAD = 'Sí' THEN NIT END)
+        description: Número de empresas exportadoras no minero-energéticas (NME) con actividad relevante para ProColombia.
+        synonyms: [exportadoras nme, cuantas exportadoras no mineras]
       - name: PROMEDIO_POBREZA_MUNICIPIO
-        expr: AVG(_POBREZA_MUNICIPIO)
+        expr: AVG(PCT_POBREZA_MUNICIPIO)
         description: Promedio de la incidencia de pobreza (0-100) de los municipios de las empresas del grupo, ponderado por número de empresas.
       - name: PROMEDIO_INFORMALIDAD_MUNICIPIO
-        expr: AVG(_INFORMALIDAD_MUNICIPIO)
+        expr: AVG(PCT_INFORMALIDAD_MUNICIPIO)
         description: Promedio de la tasa de informalidad (0-100) de los municipios de las empresas del grupo.
       - name: NUMERO_MUNICIPIOS
         expr: COUNT(DISTINCT COD_MUNICIPIO_EMP)
@@ -843,7 +832,7 @@ tables:
       - name: NO_EXPORTADORAS
         expr: HA_EXPORTADO = 'No'
         description: Empresas sin exportaciones en los últimos 5 años (potenciales o futuros exportadores).
-        synonyms: [no exportadoras, futuros exportadores, potenciales exportadoras, que no exportan]
+        synonyms: [no exportadoras, potenciales exportadoras, que no exportan]
       - name: ATENDIDAS_PROCOLOMBIA
         expr: ATENDIDA_PC = 'Sí'
         description: Empresas atendidas por ProColombia (con negocios, servicios u oportunidades en el CRM).
@@ -896,85 +885,120 @@ tables:
         description: Empresas que reportan al menos un empleado; útil para promedios de empleo y porcentaje de mujeres.
 
 verified_queries:
-  - name: empresas_por_tamano
-    question: ¿Cuántas empresas hay por tamaño?
+  - name: empresas_por_departamento_y_tamano
+    question: ¿Cuántas empresas hay por departamento y tamaño?
     sql: |
-      SELECT TAMANO, COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS
+      SELECT DEPARTAMENTO_EMP, TAMANO, COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS
       FROM EMPRESAS
-      GROUP BY TAMANO
+      WHERE TAMANO <> 'No determinado' AND DEPARTAMENTO_EMP <> 'No determinado'
+      GROUP BY DEPARTAMENTO_EMP, TAMANO
       ORDER BY NUMERO_EMPRESAS DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+      LIMIT 200
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
     use_as_onboarding_question: true
 
-  - name: exportadoras_por_departamento
-    question: ¿Cuántas empresas exportadoras hay por departamento y cuánto exportaron en 2024?
+  - name: empresas_por_cadena_y_pct_exportadoras
+    question: ¿Cuántas empresas hay por cadena productiva y qué porcentaje ha exportado?
     sql: |
-      SELECT DEPARTAMENTO_EMP, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2024) AS TOTAL_EXPO_2024_USD
+      SELECT CADENA_SEGMENTACION,
+             COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS,
+             COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN NIT END) AS NUMERO_EXPORTADORAS,
+             100 * COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN NIT END) / NULLIF(COUNT(DISTINCT NIT), 0) AS PCT_EXPORTADORAS
       FROM EMPRESAS
-      WHERE HA_EXPORTADO = 'Sí'
-      GROUP BY DEPARTAMENTO_EMP
-      ORDER BY TOTAL_EXPO_2024_USD DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+      GROUP BY CADENA_SEGMENTACION
+      ORDER BY NUMERO_EMPRESAS DESC
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
+
+  - name: actividades_por_cadena_antioquia
+    question: Principales actividades económicas (CIIU) por cadena productiva en Antioquia
+    sql: |
+      SELECT CADENA_SEGMENTACION, DESCRIPCION_CIIU_1, COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS
+      FROM EMPRESAS
+      WHERE DEPARTAMENTO_EMP = 'Antioquia'
+        AND CADENA_SEGMENTACION <> 'CIIU no aplica categoría ProColombia'
+      GROUP BY CADENA_SEGMENTACION, DESCRIPCION_CIIU_1
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY CADENA_SEGMENTACION ORDER BY NUMERO_EMPRESAS DESC) <= 5
+      ORDER BY CADENA_SEGMENTACION, NUMERO_EMPRESAS DESC
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
     use_as_onboarding_question: true
 
   - name: top_paises_destino
-    question: ¿Cuáles son los 10 principales países destino de las exportadoras y cuántas empresas exportan a cada uno?
+    question: ¿Cuáles son los 10 principales países destino por número de exportadoras?
     sql: |
-      SELECT PAIS_DESTINO, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2024) AS TOTAL_EXPO_2024_USD
+      SELECT PAIS_DESTINO, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2025) AS TOTAL_EXPO_2025_USD
       FROM EMPRESAS
       WHERE HA_EXPORTADO = 'Sí'
       GROUP BY PAIS_DESTINO
       ORDER BY NUMERO_EXPORTADORAS DESC
       LIMIT 10
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
+
+  - name: variacion_ano_corrido_por_cadena
+    question: ¿Cómo variaron las exportaciones enero-mayo 2026 frente a enero-mayo 2025 por cadena?
+    sql: |
+      SELECT CADENA_EXPORTADA,
+             SUM(EXPO_ENE_MAY_2025) AS EXPO_ENE_MAY_2025_USD,
+             SUM(EXPO_ENE_MAY_2026) AS EXPO_ENE_MAY_2026_USD,
+             100 * (SUM(EXPO_ENE_MAY_2026) - SUM(EXPO_ENE_MAY_2025)) / NULLIF(SUM(EXPO_ENE_MAY_2025), 0) AS VARIACION_PCT
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí'
+      GROUP BY CADENA_EXPORTADA
+      ORDER BY EXPO_ENE_MAY_2026_USD DESC
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
+
+  - name: top_exportadoras_cafe
+    question: Top 10 empresas exportadoras de café con su NIT y departamento
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, TAMANO, DEPARTAMENTO_EMP, MUNICIPIO_EMP, PAIS_DESTINO, EXPO_2025 AS EXPO_2025_USD
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí' AND SECTOR = 'Café'
+      ORDER BY EXPO_2025 DESC
+      LIMIT 10
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
     use_as_onboarding_question: true
 
   - name: pymes_agroalimentos_no_atendidas
-    question: ¿Qué pymes de la cadena Agroalimentos en Antioquia han exportado pero no han sido atendidas por ProColombia?
+    question: Pymes de Agroalimentos en Antioquia que exportan pero no han sido atendidas por ProColombia
     sql: |
-      SELECT NIT, RAZON_SOCIAL, MUNICIPIO_EMP, TAMANO, SECTOR, PAIS_DESTINO, EXPO_2024, EXPO_2025, EMAIL, TELEFONO
+      SELECT NIT, RAZON_SOCIAL, TAMANO, DEPARTAMENTO_EMP, MUNICIPIO_EMP, SECTOR, PAIS_DESTINO, EXPO_2025 AS EXPO_2025_USD
       FROM EMPRESAS
       WHERE HA_EXPORTADO = 'Sí'
         AND ATENDIDA_PC = 'No'
         AND TAMANO IN ('Pequeña', 'Mediana')
         AND CADENA_SEGMENTACION = 'Agroalimentos'
         AND DEPARTAMENTO_EMP = 'Antioquia'
-      ORDER BY EXPO_2024 DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+      ORDER BY EXPO_2025 DESC
+      LIMIT 100
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
 
-  - name: variacion_ano_corrido_por_cadena
-    question: ¿Cómo variaron las exportaciones enero-mayo 2026 frente a enero-mayo 2025 por cadena productiva exportada?
+  - name: medianas_sistema_moda_bogota_no_exportan
+    question: Empresas medianas de Sistema Moda en Bogotá que aún no exportan, con NIT y correo
     sql: |
-      SELECT CADENA,
-             SUM(EXPO_ENE_MAY_2025) AS EXPO_ENE_MAY_2025_USD,
-             SUM(EXPO_ENE_MAY_2026) AS EXPO_ENE_MAY_2026_USD,
-             100 * (SUM(EXPO_ENE_MAY_2026) - SUM(EXPO_ENE_MAY_2025)) / NULLIF(SUM(EXPO_ENE_MAY_2025), 0) AS VARIACION_PCT
-      FROM EMPRESAS
-      WHERE HA_EXPORTADO = 'Sí'
-      GROUP BY CADENA
-      ORDER BY EXPO_ENE_MAY_2026_USD DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
-
-  - name: potenciales_exportadores_sistema_moda
-    question: ¿Cuáles son las empresas medianas y grandes de Sistema Moda que no han exportado, ordenadas por ingresos?
-    sql: |
-      SELECT NIT, RAZON_SOCIAL, DEPARTAMENTO_EMP, MUNICIPIO_EMP, TAMANO, DESCRIPCION_CIIU_1, INGRESOS_OPERACIONALES, EMPLEADOS, ATENDIDA_PC
+      SELECT NIT, RAZON_SOCIAL, TAMANO, DEPARTAMENTO_EMP, MUNICIPIO_EMP, DESCRIPCION_CIIU_1, INGRESOS_OPERACIONALES, EMAIL
       FROM EMPRESAS
       WHERE HA_EXPORTADO = 'No'
         AND CADENA_SEGMENTACION = 'Sistema Moda'
-        AND TAMANO IN ('Mediana', 'Grande')
+        AND TAMANO = 'Mediana'
+        AND DEPARTAMENTO_EMP = 'Bogotá, D.C.'
       ORDER BY INGRESOS_OPERACIONALES DESC
-      LIMIT 50
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+      LIMIT 100
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
 
   - name: empresas_pdet_por_subregion
-    question: ¿Cuántas empresas hay en municipios PDET por subregión y cuántas de ellas exportan?
+    question: ¿Cuántas empresas hay en municipios PDET por subregión y cuántas exportan?
     sql: |
       SELECT SUBREGION_PDET,
              COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS,
@@ -983,8 +1007,135 @@ verified_queries:
       WHERE PDET = 'Sí'
       GROUP BY SUBREGION_PDET
       ORDER BY NUMERO_EMPRESAS DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
+
+  - name: pobreza_exportadoras_vs_no_exportadoras
+    question: Promedio de pobreza municipal de las exportadoras frente a las no exportadoras
+    sql: |
+      SELECT HA_EXPORTADO,
+             COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS,
+             AVG(PCT_POBREZA_MUNICIPIO) AS PROMEDIO_POBREZA_MUNICIPIO_PCT
+      FROM EMPRESAS
+      GROUP BY HA_EXPORTADO
+      ORDER BY HA_EXPORTADO DESC
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
+
+  - name: ficha_empresa_por_nit
+    question: Ficha de la empresa con NIT 890903938
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, TAMANO, ORGANIZACION_JURIDICA, DEPARTAMENTO_EMP, MUNICIPIO_EMP,
+             COD_CIIU_1, DESCRIPCION_CIIU_1, CADENA_SEGMENTACION, ANOS_EMPRESA, INVERSION_EXTRANJERA,
+             ACTIVOS, INGRESOS_OPERACIONALES, UTILIDAD, EMPLEADOS, CANTIDAD_MUJERES_EMPLEADAS,
+             HA_EXPORTADO, TRAYECTORIA_EXPORTADORA, SECTOR, SUBSECTOR, DESC_POSICION_ARANCELARIA, PAIS_DESTINO, HUB,
+             EXPO_2021, EXPO_2022, EXPO_2023, EXPO_2024, EXPO_2025, EXPO_ENE_MAY_2026,
+             ATENDIDA_PC, NUMERO_NEGOCIOS_2025, NUMERO_SERVICIOS_2025, NUMERO_OPORTUNIDADES_2025,
+             REPRESENTANTE_LEGAL, EMAIL, TELEFONO, PDET, ZOMAC
+      FROM EMPRESAS
+      WHERE NIT = '890903938'
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
+
+  - name: que_exporta_empresa_por_nombre
+    question: ¿Qué exporta y hacia dónde la empresa FLORES DE APOSENTOS?
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, DEPARTAMENTO_EMP, MUNICIPIO_EMP, HA_EXPORTADO, TRAYECTORIA_EXPORTADORA,
+             CADENA_EXPORTADA, SECTOR, SUBSECTOR, DESC_POSICION_ARANCELARIA, PAIS_DESTINO, HUB,
+             EXPO_2023, EXPO_2024, EXPO_2025, EXPO_ENE_MAY_2026
+      FROM EMPRESAS
+      WHERE RAZON_SOCIAL ILIKE '%FLORES DE APOSENTOS%'
+      ORDER BY EXPO_2025 DESC
+      LIMIT 20
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+    use_as_onboarding_question: true
+
+  - name: pymes_agroalimentos_antioquia
+    question: ¿Cuántas pymes de Agroalimentos hay en Antioquia?
+    sql: |
+      SELECT COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS
+      FROM EMPRESAS
+      WHERE TAMANO IN ('Pequeña', 'Mediana')
+        AND CADENA_SEGMENTACION = 'Agroalimentos'
+        AND DEPARTAMENTO_EMP = 'Antioquia'
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+
+  - name: pymes_agroalimentos_antioquia_exportadoras
+    question: ¿Cuántas pymes de Agroalimentos en Antioquia han exportado?
+    sql: |
+      SELECT COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS,
+             COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN NIT END) AS NUMERO_EXPORTADORAS
+      FROM EMPRESAS
+      WHERE TAMANO IN ('Pequeña', 'Mediana')
+        AND CADENA_SEGMENTACION = 'Agroalimentos'
+        AND DEPARTAMENTO_EMP = 'Antioquia'
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+
+  - name: listado_pymes_agroalimentos_antioquia_exportadoras
+    question: Lístame las pymes de Agroalimentos en Antioquia que han exportado, con NIT
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, TAMANO, DEPARTAMENTO_EMP, MUNICIPIO_EMP, SECTOR, PAIS_DESTINO, EXPO_2025 AS EXPO_2025_USD
+      FROM EMPRESAS
+      WHERE TAMANO IN ('Pequeña', 'Mediana')
+        AND CADENA_SEGMENTACION = 'Agroalimentos'
+        AND DEPARTAMENTO_EMP = 'Antioquia'
+        AND HA_EXPORTADO = 'Sí'
+      ORDER BY EXPO_2025 DESC
+      LIMIT 100
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+
+  - name: medianas_sistema_moda_bogota
+    question: ¿Cuántas empresas medianas de Sistema Moda hay en Bogotá y cuántas exportan?
+    sql: |
+      SELECT COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS,
+             COUNT(DISTINCT CASE WHEN HA_EXPORTADO = 'Sí' THEN NIT END) AS NUMERO_EXPORTADORAS
+      FROM EMPRESAS
+      WHERE TAMANO = 'Mediana'
+        AND CADENA_SEGMENTACION = 'Sistema Moda'
+        AND DEPARTAMENTO_EMP = 'Bogotá, D.C.'
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+
+  - name: empresas_por_tamano
+    question: ¿Cuántas empresas hay por tamaño?
+    sql: |
+      SELECT TAMANO, COUNT(DISTINCT NIT) AS NUMERO_EMPRESAS
+      FROM EMPRESAS
+      GROUP BY TAMANO
+      ORDER BY NUMERO_EMPRESAS DESC
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+
+  - name: exportadoras_por_departamento
+    question: ¿Cuántas empresas exportadoras hay por departamento y cuánto exportaron en 2025?
+    sql: |
+      SELECT DEPARTAMENTO_EMP, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2025) AS TOTAL_EXPO_2025_USD
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'Sí'
+      GROUP BY DEPARTAMENTO_EMP
+      ORDER BY TOTAL_EXPO_2025_USD DESC
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
+
+  - name: potenciales_exportadores_sistema_moda
+    question: ¿Cuáles son las empresas medianas y grandes de Sistema Moda que no han exportado, ordenadas por ingresos?
+    sql: |
+      SELECT NIT, RAZON_SOCIAL, TAMANO, DEPARTAMENTO_EMP, MUNICIPIO_EMP, DESCRIPCION_CIIU_1, INGRESOS_OPERACIONALES, ATENDIDA_PC
+      FROM EMPRESAS
+      WHERE HA_EXPORTADO = 'No'
+        AND CADENA_SEGMENTACION = 'Sistema Moda'
+        AND TAMANO IN ('Mediana', 'Grande')
+      ORDER BY INGRESOS_OPERACIONALES DESC
+      LIMIT 100
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
 
   - name: participacion_mujeres_por_tamano
     question: ¿Cuál es el porcentaje de mujeres empleadas por tamaño de empresa?
@@ -997,30 +1148,19 @@ verified_queries:
       WHERE EMPLEADOS > 0
       GROUP BY TAMANO
       ORDER BY TOTAL_EMPLEADOS DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
-
-  - name: top_exportadoras_cafe
-    question: ¿Cuáles son las 20 empresas que más exportaron café en 2024?
-    sql: |
-      SELECT NIT, RAZON_SOCIAL, DEPARTAMENTO_EMP, TAMANO, PAIS_DESTINO, TRAYECTORIA_EXPORTADORA, EXPO_2024
-      FROM EMPRESAS
-      WHERE HA_EXPORTADO = 'Sí' AND SECTOR = 'Café'
-      ORDER BY EXPO_2024 DESC
-      LIMIT 20
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
 
   - name: trayectoria_por_hub
     question: ¿Cuántas exportadoras hay por trayectoria exportadora y hub de destino?
     sql: |
-      SELECT TRAYECTORIA_EXPORTADORA, HUB, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2024) AS TOTAL_EXPO_2024_USD
+      SELECT TRAYECTORIA_EXPORTADORA, HUB, COUNT(DISTINCT NIT) AS NUMERO_EXPORTADORAS, SUM(EXPO_2025) AS TOTAL_EXPO_2025_USD
       FROM EMPRESAS
       WHERE HA_EXPORTADO = 'Sí'
       GROUP BY TRAYECTORIA_EXPORTADORA, HUB
       ORDER BY TRAYECTORIA_EXPORTADORA, NUMERO_EXPORTADORAS DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
 
   - name: municipios_pequenos_cadenas
     question: ¿Cuántas empresas de cadenas ProColombia hay en municipios de menos de 200 mil habitantes, por macrorregión?
@@ -1031,23 +1171,8 @@ verified_queries:
         AND CADENA_SEGMENTACION <> 'CIIU no aplica categoría ProColombia'
       GROUP BY MACRORREGION_EMP
       ORDER BY NUMERO_EMPRESAS DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
-
-  - name: ficha_empresa_por_nit
-    question: Muéstrame la ficha completa de la empresa con NIT 830068604
-    sql: |
-      SELECT NIT, RAZON_SOCIAL, TAMANO, ORGANIZACION_JURIDICA, DEPARTAMENTO_EMP, MUNICIPIO_EMP,
-             COD_CIIU_1, DESCRIPCION_CIIU_1, CADENA_SEGMENTACION, ANOS_EMPRESA, INVERSION_EXTRANJERA,
-             ACTIVOS, INGRESOS_OPERACIONALES, UTILIDAD, EMPLEADOS, CANTIDAD_MUJERES_EMPLEADAS,
-             HA_EXPORTADO, TRAYECTORIA_EXPORTADORA, SECTOR, SUBSECTOR, DESC_POSICION_ARANCELARIA, PAIS_DESTINO, HUB,
-             EXPO_2021, EXPO_2022, EXPO_2023, EXPO_2024, EXPO_2025, EXPO_ENE_MAY_2026,
-             ATENDIDA_PC, NUMERO_NEGOCIOS_2025, NUMERO_SERVICIOS_2025, NUMERO_OPORTUNIDADES_2025,
-             REPRESENTANTE_LEGAL, EMAIL, TELEFONO, PDET, ZOMAC
-      FROM EMPRESAS
-      WHERE NIT = '830068604'
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
 
   - name: servicios_procolombia_por_cadena_2025
     question: ¿Cuántos servicios, negocios y oportunidades entregó ProColombia en 2025 por cadena de segmentación?
@@ -1061,22 +1186,33 @@ verified_queries:
       WHERE ATENDIDA_PC = 'Sí'
       GROUP BY CADENA_SEGMENTACION
       ORDER BY EMPRESAS_ATENDIDAS DESC
-    verified_by: Modelo semántico inicial
-    verified_at: 1756857600
+    verified_by: Puesta a punto 3.5.0
+    verified_at: 1788480000
 
 custom_instructions: >-
   Responde siempre en español. La tabla tiene una fila por empresa: para contar empresas usa
-  COUNT(DISTINCT NIT). Cuando la pregunta trate sobre exportadoras, países destino, productos
-  exportados, sectores, subsectores, hubs, posiciones arancelarias o trayectoria, filtra siempre con
-  HA_EXPORTADO = 'Sí' para excluir el valor 'No exportó ult. 5 años'. Excluye también los valores
-  'No determinado' de las agrupaciones salvo que se pidan explícitamente. Para ubicación de la empresa
-  usa DEPARTAMENTO_EMP y MUNICIPIO_EMP (no DEPARTAMENTO_EXPO ni las columnas *_BASE_MUNICIPIOS).
-  Para cadena productiva usa CADENA_SEGMENTACION salvo que se pregunte por la cadena del producto
-  exportado (CADENA). Las cifras EXPO_* están en dólares FOB (USD); ACTIVOS, INGRESOS_OPERACIONALES y
-  UTILIDAD en pesos colombianos (COP). Los indicadores municipales (POBLACION_MUNICIPIO,
-  VALOR_AGREGADO_MUNICIPIO y los PCT_*_MUNICIPIO) describen al municipio, no a la empresa: nunca los
-  sumes entre empresas; usa AVG o MAX. Las comparaciones año corrido deben usar EXPO_ENE_MAY_2026 vs
-  EXPO_ENE_MAY_2025. Cuando se pidan listados de empresas, incluye NIT, RAZON_SOCIAL, TAMANO,
-  DEPARTAMENTO_EMP, MUNICIPIO_EMP y limita a 100 filas salvo indicación contraria. Para búsquedas por
-  nombre, producto o actividad usa ILIKE con comodines. Interpreta 'Pyme' como TAMANO IN ('Pequeña','Mediana')
-  y 'MiPyme' como Micro+Pequeña+Mediana.
+  COUNT(DISTINCT NIT). PERIODO: si la pregunta no indica un año, usa 2025, el último año completo
+  (EXPO_2025 / TOTAL_EXPO_2025), y dilo en el alias de la columna; «año corrido» o «2026» significa
+  EXPO_ENE_MAY_2026 comparado con EXPO_ENE_MAY_2025; «últimos 5 años» es 2021-2025
+  (TOTAL_EXPO_2021_2025). EXPORTADORAS: cuando la pregunta trate sobre exportadoras, países destino,
+  productos exportados, sectores, subsectores, hubs, posiciones arancelarias o trayectoria, filtra
+  siempre con HA_EXPORTADO = 'Sí' para excluir el valor 'No exportó ult. 5 años'. Excluye los valores
+  'No determinado' de las agrupaciones salvo que se pidan explícitamente. UBICACIÓN: usa
+  DEPARTAMENTO_EMP y MUNICIPIO_EMP (no DEPARTAMENTO_EXPO). CADENAS: «cadena» o «cadena productiva» a
+  secas es CADENA_SEGMENTACION (aplica a todas las empresas); CADENA_EXPORTADA sólo cuando se pregunte
+  por la cadena del producto exportado. Las empresas no exportadoras no tienen SECTOR ni SUBSECTOR:
+  para «sectores» o «actividades» de todas las empresas usa DESCRIPCION_CIIU_1. LITERALES: escribe los
+  valores exactamente como en sample_values ('Bogotá, D.C.', 'Antioquia', 'Agroalimentos',
+  'Sistema Moda', 'Pequeña', 'Mediana', 'Sí', 'No'). UNIDADES: EXPO_* en dólares FOB (USD); ACTIVOS,
+  INGRESOS_OPERACIONALES y UTILIDAD en pesos colombianos (COP). Los indicadores municipales
+  (POBLACION_MUNICIPIO, VALOR_AGREGADO_MUNICIPIO y los PCT_*_MUNICIPIO) describen al municipio, no a la
+  empresa: nunca los sumes entre empresas; usa AVG o MAX. ORDEN: ordena siempre por la métrica
+  principal de forma descendente, salvo que se pida otro orden. LISTADOS de empresas: incluye NIT,
+  RAZON_SOCIAL, TAMANO, DEPARTAMENTO_EMP y MUNICIPIO_EMP más, a lo sumo, tres columnas relevantes para
+  la pregunta; ordena por la cifra más relevante y limita a 100 filas salvo indicación contraria. No
+  incluyas EMAIL, TELEFONO, DIRECCION ni REPRESENTANTE_LEGAL salvo que se pidan expresamente (correo,
+  teléfono, dirección, representante). CONTINUIDAD: cuando la pregunta sea una continuación de la
+  anterior («de esas», «y cuántas», «lístame», «muéstrame esas empresas»), conserva TODOS los filtros
+  de la consulta anterior y agrega sólo lo nuevo; si pide el listado, cambia la agregación por las
+  columnas del listado. Para búsquedas por nombre, producto o actividad usa ILIKE con comodines.
+  Interpreta 'Pyme' como TAMANO IN ('Pequeña','Mediana') y 'MiPyme' como Micro+Pequeña+Mediana.

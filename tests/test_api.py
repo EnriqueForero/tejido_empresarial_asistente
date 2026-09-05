@@ -3,16 +3,26 @@ import os
 os.environ["APP_DEMO_MODE"] = "true"
 os.environ["APP_ENV"] = "development"
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.config import PREVIEW_COLUMNS
-from backend.main import app
 
 
-client = TestClient(app)
+@pytest.fixture()
+def client() -> TestClient:
+    """Cliente sobre el aplicativo vigente.
+
+    Se construye dentro de la prueba y no al importar el módulo: otras pruebas
+    recargan `backend.main`, y un cliente guardado al importar quedaría atado a
+    un aplicativo antiguo. Así la batería no depende del orden de recolección.
+    """
+    import backend.main
+
+    return TestClient(backend.main.app)
 
 
-def test_health_and_metadata() -> None:
+def test_health_and_metadata(client: TestClient) -> None:
     health = client.get("/api/health")
     assert health.status_code == 200
     cuerpo = health.json()
@@ -42,7 +52,7 @@ def test_health_and_metadata() -> None:
     assert "Correo electrónico" in body["export_columns"]
 
 
-def test_filter_options_are_dependent() -> None:
+def test_filter_options_are_dependent(client: TestClient) -> None:
     everything = client.post("/api/filters/options", json={"selections": {}}).json()
     municipalities = next(item for item in everything["filters"] if item["key"] == "MUNICIPIO")
     assert len(municipalities["options"]) > 5
@@ -54,7 +64,7 @@ def test_filter_options_are_dependent() -> None:
     assert "Antioquia" in departments["options"] and len(departments["options"]) > 1
 
 
-def test_filter_search_and_pagination_contract() -> None:
+def test_filter_search_and_pagination_contract(client: TestClient) -> None:
     response = client.post(
         "/api/companies/search",
         json={"mode": "filters", "filters": {"DEPARTAMENTO": ["Antioquia"]}, "term": "", "nits": [], "page": 1, "page_size": 25},
@@ -69,13 +79,13 @@ def test_filter_search_and_pagination_contract() -> None:
     assert "Correo electrónico" not in body["rows"][0]
 
 
-def test_export_filters_apply() -> None:
+def test_export_filters_apply(client: TestClient) -> None:
     response = client.post("/api/companies/search", json={"mode": "filters", "filters": {"PAIS_DESTINO": ["Estados Unidos"]}})
     assert response.status_code == 200
     assert response.json()["total"] == 4
 
 
-def test_direct_search_validation_and_results() -> None:
+def test_direct_search_validation_and_results(client: TestClient) -> None:
     invalid = client.post("/api/companies/search", json={"mode": "business_name", "term": "A"})
     assert invalid.status_code == 422
 
@@ -90,7 +100,7 @@ def test_direct_search_validation_and_results() -> None:
     assert batch.json()["total"] == 2
 
 
-def test_company_profile() -> None:
+def test_company_profile(client: TestClient) -> None:
     response = client.get("/api/companies/900000002")
     assert response.status_code == 200
     body = response.json()
@@ -102,7 +112,7 @@ def test_company_profile() -> None:
     assert client.get("/api/companies/x").status_code == 422
 
 
-def test_glossary_and_formatted_export() -> None:
+def test_glossary_and_formatted_export(client: TestClient) -> None:
     glossary = client.get("/api/glossary")
     assert glossary.status_code == 200
     body = glossary.json()
@@ -121,7 +131,7 @@ def test_glossary_and_formatted_export() -> None:
     assert "ProColombia_TejidoEmpresarial_NIT_900000001_" in response.headers["x-export-filename"]
 
 
-def test_diagnostico_en_modo_demostracion() -> None:
+def test_diagnostico_en_modo_demostracion(client: TestClient) -> None:
     respuesta = client.get("/api/diagnostico")
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
@@ -130,7 +140,7 @@ def test_diagnostico_en_modo_demostracion() -> None:
     assert "APP_DEMO_MODE" in cuerpo["siguiente_paso"]
 
 
-def test_spa_fallback_and_unknown_routes() -> None:
+def test_spa_fallback_and_unknown_routes(client: TestClient) -> None:
     page = client.get("/consultar")
     assert page.status_code == 200
     assert "text/html" in page.headers["content-type"]
@@ -141,6 +151,6 @@ def test_spa_fallback_and_unknown_routes() -> None:
     assert response.headers["Content-Security-Policy"].startswith("default-src 'self'")
 
 
-def test_unknown_filters_are_rejected() -> None:
+def test_unknown_filters_are_rejected(client: TestClient) -> None:
     response = client.post("/api/companies/search", json={"mode": "filters", "filters": {"NO_PERMITIDO": ["x"]}})
     assert response.status_code == 422

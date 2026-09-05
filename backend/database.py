@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import logging
 import os
 import re
 import threading
@@ -54,6 +55,52 @@ VARIABLES_LLAVE = [
     "SF_PRIVATE_KEY_B64_2",
     "SF_PRIVATE_KEY_PATH_2",
 ]
+
+logger = logging.getLogger("tejido.snowflake")
+
+#: Segundos que se espera antes de cerrar una sesión retirada: da tiempo a que
+#: terminen las consultas que otros hilos tengan en curso sobre ella.
+GRACIA_CIERRE = 60.0
+
+#: Fragmentos de error que significan «la sesión o la conexión murió». Sólo
+#: ante ellos vale la pena reabrir la sesión y reintentar: un error de la propia
+#: consulta (sintaxis, permisos, tiempo de espera, modelo) fallaría igual.
+_SENALES_SESION = (
+    "session no longer exists",
+    "session does not exist",
+    "token has expired",
+    "token is invalid",
+    "authentication token",
+    "connection is closed",
+    "connection was closed",
+    "not connected",
+    "connection reset",
+    "remote end closed",
+    "broken pipe",
+    "eof occurred",
+    "failed to connect",
+    "390111",
+    "390112",
+    "390114",
+    "390195",
+    "08001",
+    "08003",
+    "08s01",
+    "08007",
+)
+
+
+def es_error_de_sesion(exc: BaseException | str) -> bool:
+    """¿El error dice que la sesión con Snowflake dejó de servir?"""
+    texto = str(exc).lower()
+    return any(senal in texto for senal in _SENALES_SESION)
+
+
+def _cerrar_en_silencio(sesion: Any) -> None:
+    try:
+        sesion.close()
+    except Exception:  # noqa: BLE001 - cerrar es cortesía, no requisito
+        pass
 
 
 def _entero(nombre: str, por_defecto: int) -> int:
@@ -258,6 +305,15 @@ class SnowflakeService:
             # Acota el intento de conexión: sin esto un fallo puede tardar minutos.
             "login_timeout": _entero("SF_LOGIN_TIMEOUT", 30),
             "network_timeout": _entero("SF_NETWORK_TIMEOUT", 60),
+            # La sesión es compartida y puede pasar horas sin uso: el conector la
+            # mantiene viva en vez de dejar que caduque en silencio.
+            "client_session_keep_alive": True,
+            # Ninguna sentencia (incluida la redacción con Cortex) puede quedarse
+            # colgada: Snowflake la cancela al superar el plazo. La exportación
+            # de 5.000 empresas tarda segundos; 300 s es holgado y medible.
+            "session_parameters": {
+                "STATEMENT_TIMEOUT_IN_SECONDS": _entero("SF_STATEMENT_TIMEOUT", 300),
+            },
         }
 
     # ── Sesión ──────────────────────────────────────────────────────────
@@ -365,34 +421,53 @@ class SnowflakeService:
                 marco[columna] = pd.to_numeric(marco[columna], errors="coerce")
         return marco
 
-    def _ejecutar(self, query: str, accion):
-        """Ejecuta la consulta y, si falla, reintenta una vez con sesión nueva."""
+    def _con_sesion(self, operacion):
+        """Ejecuta `operacion(sesion)`; sólo si la sesión murió, la reabre y reintenta una vez.
+
+        Un error de la propia consulta (sintaxis, permisos, plazo, modelo) no se
+        reintenta: repetirlo duplica la espera sin cambiar el resultado. Es la
+        regla que evita que un fallo de la redacción cueste cuatro llamadas.
+        """
+        sesion = self.session()
         try:
-            resultado = accion(self.session().sql(query))
+            resultado = operacion(sesion)
         except Exception as primero:
-            self._reset_session()
+            if not es_error_de_sesion(primero):
+                self.ultimo_error_consulta = redactar(primero)
+                raise
+            logger.warning("La sesión con Snowflake dejó de servir (%s); se reabre una vez.", redactar(primero, 200))
+            self._reset_session(sesion)
             try:
-                resultado = accion(self.session().sql(query))
+                resultado = operacion(self.session())
             except Exception as segundo:
-                self.ultimo_error_consulta = redactar(segundo or primero)
+                self.ultimo_error_consulta = redactar(segundo)
                 raise
         self.ultimo_error_consulta = None
         return resultado
 
+    def _ejecutar(self, query: str, accion):
+        return self._con_sesion(lambda sesion: accion(sesion.sql(query)))
+
     def dataframe(self, query: str) -> pd.DataFrame:
         return self._ejecutar(query, self._a_pandas)
 
-    def filas_con_parametros(self, query: str, parametros: list[Any]) -> list[Any]:
+    def filas_con_parametros(self, query: str, parametros: list[Any], silencioso: bool = False) -> list[Any]:
         """Consulta con variables enlazadas (`?`), sin interpolar texto en la SQL.
 
-        La usa el asistente para llamar a SNOWFLAKE.CORTEX.COMPLETE con el
-        contenido de la pregunta como parámetro y no como parte de la sentencia.
+        La usan el asistente (SNOWFLAKE.CORTEX.COMPLETE con la pregunta como
+        parámetro), la auditoría y la telemetría.
+
+        Args:
+            silencioso: No deja rastro en `ultimo_error_consulta`; para escrituras
+                de fondo cuyo fallo no debe aparecer en el mensaje al usuario.
         """
+        if not silencioso:
+            return self._con_sesion(lambda sesion: sesion.sql(query, parametros).collect())
+        previo = self.ultimo_error_consulta
         try:
-            return self.session().sql(query, parametros).collect()
-        except Exception:
-            self._reset_session()
-            return self.session().sql(query, parametros).collect()
+            return self._con_sesion(lambda sesion: sesion.sql(query, parametros).collect())
+        finally:
+            self.ultimo_error_consulta = previo
 
     def scalar(self, query: str, key: str = "TOTAL") -> int:
         rows = self._ejecutar(query, lambda consulta: consulta.collect())
@@ -404,27 +479,52 @@ class SnowflakeService:
         except Exception:
             return int(row[0])
 
-    def _reset_session(self) -> None:
+    def _reset_session(self, fallida: Any = None) -> None:
+        """Retira la sesión compartida y la cierra más tarde, sin cortar consultas en curso.
+
+        Si se indica `fallida`, sólo se retira si sigue siendo la vigente: dos
+        hilos que fallan a la vez no reabren la conexión dos veces.
+        """
         with self._lock:
-            session = self._session
+            actual = self._session
+            if fallida is not None and actual is not fallida:
+                return
             self._session = None
-            if session is not None:
-                try:
-                    session.close()
-                except Exception:
-                    pass
+        if actual is not None:
+            temporizador = threading.Timer(GRACIA_CIERRE, _cerrar_en_silencio, args=(actual,))
+            temporizador.daemon = True
+            temporizador.start()
+
+    def calentar(self) -> None:
+        """Abre la sesión en segundo plano al arrancar.
+
+        Así la primera consulta de cada despliegue no paga la conexión (2 a 4 s).
+        Si falla, sólo se registra: la primera consulta real lo intentará de nuevo
+        y `/estado` mostrará la causa.
+        """
+        if not self.configured:
+            return
+
+        def _abrir() -> None:
+            try:
+                self.session(intentos=1)
+                logger.info("Sesión con Snowflake abierta al arrancar.")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("No se pudo abrir la sesión al arrancar: %s", redactar(exc, 300))
+
+        threading.Thread(target=_abrir, name="snowflake-calentar", daemon=True).start()
 
     def log_event(self, event_type: str, page: str, detail: str, filters: str) -> None:
+        """Registra un evento de auditoría con parámetros enlazados (nunca texto interpolado)."""
         try:
             from backend.config import EVENT_TABLE
 
-            safe = lambda value: str(value).replace("'", "''")
-            query = (
+            self.filas_con_parametros(
                 f"INSERT INTO {EVENT_TABLE} (TIPO_EVENTO, PAGINA, DETALLE_EVENTO, FILTROS, FECHA_HORA) "
-                f"VALUES ('{safe(event_type)}', '{safe(page)}', '{safe(detail)}', '{safe(filters)}', "
-                "CONVERT_TIMEZONE('America/Los_Angeles', 'America/Bogota', CURRENT_TIMESTAMP))"
+                "VALUES (?, ?, ?, ?, CONVERT_TIMEZONE('America/Los_Angeles', 'America/Bogota', CURRENT_TIMESTAMP))",
+                [str(event_type)[:100], str(page)[:100], str(detail)[:1000], str(filters)[:4000]],
+                silencioso=True,
             )
-            self.session().sql(query).collect()
         except Exception:
             # La analítica nunca debe impedir que el usuario consulte o descargue.
             return
@@ -549,6 +649,28 @@ class SnowflakeService:
             return {"filas": int(len(marco)), "columnas": int(len(marco.columns))}
 
         paso("consulta_vista_previa", "Consulta real de la vista previa (sin filtros)", _vista_previa)
+
+        # 7. Objetos del asistente. No bloquean el aplicativo: si fallan, el
+        #    asistente lo dice en pantalla y el resto sigue funcionando.
+        from backend.config import ASISTENTE_LOG_TABLE, CORTEX_MODEL, SEMANTIC_VIEW
+
+        paso(
+            "vista_semantica",
+            f"Vista semántica del asistente · {SEMANTIC_VIEW}",
+            lambda: {"definiciones": len(self.session().sql(f"DESCRIBE SEMANTIC VIEW {SEMANTIC_VIEW}").collect())},
+        )
+        paso(
+            "tabla_asistente_log",
+            f"Tabla de métricas del asistente · {ASISTENTE_LOG_TABLE}",
+            lambda: {"filas_de_prueba": len(self.session().sql(f"SELECT * FROM {ASISTENTE_LOG_TABLE} LIMIT 1").collect())},
+        )
+
+        def _cortex_complete():
+            from backend.ia.redactor import sondear_complete
+
+            return sondear_complete(self.filas_con_parametros, CORTEX_MODEL)
+
+        paso("cortex_complete", f"Redacción con SNOWFLAKE.CORTEX.COMPLETE · {CORTEX_MODEL}", _cortex_complete)
         return pasos
 
 

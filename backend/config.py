@@ -24,7 +24,15 @@ def _int_env(nombre: str, por_defecto: int) -> int:
     except (TypeError, ValueError):
         return por_defecto
 
-APP_VERSION = "3.4.2"
+
+def _bool_env(nombre: str, por_defecto: bool) -> bool:
+    """Booleano desde el entorno («true», «1», «yes», «on»); vacío = valor por defecto."""
+    valor = os.getenv(nombre)
+    if valor is None or not valor.strip():
+        return por_defecto
+    return valor.strip().lower() in {"1", "true", "yes", "on"}
+
+APP_VERSION = "3.5.0"
 APP_TITLE = "Tejido Empresarial · ProColombia"
 
 # ==============================================================================
@@ -212,6 +220,9 @@ PREVIEW_COLUMNS = [
 # Columnas de contacto. Se incluyen en la descarga como en el aplicativo original;
 # pueden excluirse con EXPORT_INCLUDE_CONTACT_FIELDS=false.
 CONTACT_COLUMNS = ["Dirección", "Teléfono", "Correo electrónico", "ID del representante legal", "Representante legal"]
+#: Los campos de contacto van en la descarga y en el asistente salvo que se
+#: retiren con EXPORT_INCLUDE_CONTACT_FIELDS=false (una sola regla para ambos).
+EXPORT_INCLUDE_CONTACT_FIELDS = _bool_env("EXPORT_INCLUDE_CONTACT_FIELDS", True)
 
 # Secciones para la ficha de empresa (pantalla y hoja Ficha_Empresa del Excel).
 # Toda columna no listada aquí se muestra en la sección «Otras variables».
@@ -245,7 +256,7 @@ COLUMN_SECTIONS: list[tuple[str, list[str]]] = [
 
 DATA_SOURCES = [
     {"name": "RUES", "detail": "Registro Único Empresarial y Social", "cut": f"corte {RUES_CORTE}"},
-    {"name": "Supersociedades", "detail": f"Las 10.000 empresas más grandes de Colombia", "cut": str(SUPERSOCIEDADES_ANIO)},
+    {"name": "Supersociedades", "detail": "Las 10.000 empresas más grandes de Colombia", "cut": str(SUPERSOCIEDADES_ANIO)},
     {"name": "DANE – DIAN", "detail": "Exportaciones de bienes", "cut": PERIODO_EXPORTACIONES},
     {"name": "CRM ProColombia", "detail": "Negocios de Industrias 4.0 y relación institucional", "cut": PERIODO_EXPORTACIONES},
 ]
@@ -304,8 +315,36 @@ ALLOWED_SCHEMAS = frozenset(
 IA_MAX_ROWS = _int_env("IA_MAX_ROWS", 5000)          # tope duro de la SQL ejecutada
 IA_MAX_ROWS_CLIENT = _int_env("IA_MAX_ROWS_CLIENT", 500)  # filas que viajan al navegador
 IA_MAX_QUESTION_CHARS = _int_env("IA_MAX_QUESTION_CHARS", 800)
-IA_ANALYST_TIMEOUT = _int_env("IA_ANALYST_TIMEOUT", 90)
-IA_HISTORY_TURNS = _int_env("IA_HISTORY_TURNS", 6)
+#: Plazo de cada llamada a Cortex Analyst. Una pregunta con vista semántica y
+#: preguntas verificadas responde en 5 a 25 s; más de 45 s casi siempre es un
+#: fallo, y esperar 90 s sólo alarga el error.
+IA_ANALYST_TIMEOUT = _int_env("IA_ANALYST_TIMEOUT", 45)
+#: Mensajes previos (usuario + analista) que se reenvían a Analyst: 4 = dos
+#: preguntas anteriores, suficiente para refinar sin arrastrar ruido.
+IA_HISTORY_TURNS = _int_env("IA_HISTORY_TURNS", 4)
+#: Resultados que se conservan en memoria (descargas completas, listado con
+#: formato estándar e historial real): cuántos y por cuánto tiempo (segundos).
+IA_RESULT_CAPACITY = _int_env("IA_RESULT_CAPACITY", 50)
+IA_RESULT_TTL = _int_env("IA_RESULT_TTL", 1800)
+
+#: NIT reales de ejemplo. Alimentan los chips de la consulta directa, el
+#: marcador del lote, la pregunta sugerida y los `sample_values` del modelo
+#: semántico. Se cambian aquí (o con NITS_EJEMPLO) si dejan de estar en la base.
+NITS_EJEMPLO = [
+    valor.strip()
+    for valor in os.getenv("NITS_EJEMPLO", "890903938,811000740,890912462").split(",")
+    if valor.strip().isdigit()
+] or ["890903938", "811000740", "890912462"]
+
+#: Telemetría del asistente (snowflake/03_telemetria_asistente.sql).
+ASISTENTE_LOG_TABLE = os.getenv(
+    "ASISTENTE_LOG_TABLE", "APP_SEGMENTACION_EXPORTACIONES.SEGUIMIENTO.ASISTENTE_CONSULTAS"
+)
+ASISTENTE_DOWNLOAD_TABLE = os.getenv(
+    "ASISTENTE_DOWNLOAD_TABLE", "APP_SEGMENTACION_EXPORTACIONES.SEGUIMIENTO.ASISTENTE_DESCARGAS"
+)
+#: Etiqueta del entorno que queda en cada registro (production, development…).
+ENTORNO_APP = os.getenv("APP_ENV", "production").strip().lower() or "production"
 
 #: Aviso obligatorio en pantalla y en todo archivo exportado.
 IA_ADVERTENCIA = (
@@ -321,7 +360,7 @@ IA_ADVERTENCIA = (
 IA_PREGUNTAS_SUGERIDAS = [
     {"grupo": "Panorama", "texto": "¿Cuántas empresas hay por departamento y tamaño?"},
     {"grupo": "Panorama", "texto": "¿Cuántas empresas hay por cadena productiva y qué porcentaje ha exportado?"},
-    {"grupo": "Panorama", "texto": "Principales sectores económicos por cadena productiva en Antioquia"},
+    {"grupo": "Panorama", "texto": "Principales actividades económicas (CIIU) por cadena productiva en Antioquia"},
     {"grupo": "Exportaciones", "texto": "¿Cuáles son los 10 principales países destino por número de exportadoras?"},
     {"grupo": "Exportaciones", "texto": "¿Cómo variaron las exportaciones enero-mayo 2026 frente a enero-mayo 2025 por cadena?"},
     {"grupo": "Exportaciones", "texto": "Top 10 empresas exportadoras de café con su NIT y departamento"},
@@ -329,6 +368,6 @@ IA_PREGUNTAS_SUGERIDAS = [
     {"grupo": "Prospección", "texto": "Empresas medianas de Sistema Moda en Bogotá que aún no exportan, con NIT y correo"},
     {"grupo": "Territorio", "texto": "¿Cuántas empresas hay en municipios PDET por subregión y cuántas exportan?"},
     {"grupo": "Territorio", "texto": "Promedio de pobreza municipal de las exportadoras frente a las no exportadoras"},
-    {"grupo": "Empresa", "texto": "Ficha de la empresa con NIT 830068604"},
+    {"grupo": "Empresa", "texto": f"Ficha de la empresa con NIT {NITS_EJEMPLO[0]}"},
     {"grupo": "Empresa", "texto": "¿Qué exporta y hacia dónde la empresa FLORES DE APOSENTOS?"},
 ]

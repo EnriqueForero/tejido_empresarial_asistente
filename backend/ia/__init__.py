@@ -2,8 +2,9 @@
 Asistente de análisis del Tejido Empresarial.
 
 Traduce preguntas en español a SQL con **Snowflake Cortex Analyst**, ejecuta esa
-SQL con la misma conexión y el mismo rol de solo lectura que el resto del
-aplicativo, y redacta la respuesta con **SNOWFLAKE.CORTEX.COMPLETE**.
+SQL con la misma conexión y el mismo rol que el resto del aplicativo —que sólo
+lee los datos empresariales y escribe auditoría—, y redacta la respuesta con
+**SNOWFLAKE.CORTEX.COMPLETE**.
 
 El único conector del aplicativo es Snowflake: no hay proveedores de IA
 externos, ninguna clave adicional y ningún dato sale de la cuenta.

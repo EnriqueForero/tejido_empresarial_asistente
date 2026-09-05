@@ -236,7 +236,7 @@ def test_el_flujo_completo_entrega_texto_tabla_grafica_y_advertencia() -> None:
     assert etapas[:3] == ["interpretando", "validando", "consultando"]
     assert final["tipo"] == "final"
     assert "231.544" in final["texto"]
-    assert final["columnas"] == ["DEPARTAMENTO", "EMPRESAS"]
+    assert final["columnas"] == ["Departamento", "Empresas"]
     assert final["n_filas"] == 1
     assert final["advertencia"] == IA_ADVERTENCIA
     assert final["meta"]["cifras_verificadas"] is True
@@ -324,12 +324,35 @@ DATOS_DESCARGA = {
 }
 
 
+def _sembrar_resultado(consulta_id: str) -> None:
+    """Las descargas salen del servidor: se deja un resultado guardado, como haría el orquestador."""
+    from backend.ia.resultados import ResultadoGuardado
+    from backend.routers.asistente import orquestador_ia
+
+    orquestador_ia().almacen.guardar(
+        ResultadoGuardado(
+            consulta_id=consulta_id,
+            sesion_id="",
+            pregunta=DATOS_DESCARGA["pregunta"],
+            sql=DATOS_DESCARGA["sql"],
+            columnas=DATOS_DESCARGA["columnas"],
+            columnas_tecnicas=["DEPARTAMENTO_EMP", "EMPRESAS", "NIT"],
+            filas=DATOS_DESCARGA["filas"],
+            n_filas=DATOS_DESCARGA["n_filas"],
+            truncado=False,
+            nits=["900123456"],
+            texto=DATOS_DESCARGA["respuesta"],
+        )
+    )
+
+
 def test_el_excel_trae_la_pregunta_la_respuesta_la_sql_y_la_advertencia(cliente: TestClient) -> None:
     import io
 
     import openpyxl
 
-    respuesta = cliente.post("/api/ia/exportar/excel", json=DATOS_DESCARGA)
+    _sembrar_resultado("0123456789ab")
+    respuesta = cliente.post("/api/ia/exportar/excel", json={"consulta_id": "0123456789ab"})
     assert respuesta.status_code == 200
     assert "attachment" in respuesta.headers["content-disposition"]
 
@@ -357,7 +380,8 @@ def test_la_presentacion_se_genera_con_portada_tabla_y_trazabilidad(cliente: Tes
         "pptx", reason="requiere python-pptx (viene en requirements-api.txt)"
     ).Presentation
 
-    respuesta = cliente.post("/api/ia/exportar/pptx", json=DATOS_DESCARGA)
+    _sembrar_resultado("0123456789ac")
+    respuesta = cliente.post("/api/ia/exportar/pptx", json={"consulta_id": "0123456789ac"})
     assert respuesta.status_code == 200
 
     presentacion = Presentation(io.BytesIO(respuesta.content))
@@ -417,7 +441,7 @@ def test_la_tabla_y_la_grafica_llegan_antes_que_el_texto() -> None:
     assert tipos.index("resultado") < tipos.index("final")
 
     resultado = next(evento for evento in eventos if evento["tipo"] == "resultado")
-    assert resultado["columnas"] == ["DEPARTAMENTO", "EMPRESAS"]
+    assert resultado["columnas"] == ["Departamento", "Empresas"]
     assert resultado["n_filas"] == 1
     assert resultado["grafica"] is not None or resultado["n_filas"] == 1
     assert resultado["sql"]
@@ -436,7 +460,7 @@ def test_la_redaccion_acota_la_salida_del_modelo() -> None:
     """Sin tope de fichas, un modelo puede extenderse y triplicar el tiempo."""
     import json as _json
 
-    from backend.ia.redactor import _MAX_FICHAS_SALIDA, _completar
+    from backend.ia.redactor import _MAX_FICHAS_SALIDA, completar
 
     vistas: list[tuple[str, list[Any]]] = []
 
@@ -444,7 +468,7 @@ def test_la_redaccion_acota_la_salida_del_modelo() -> None:
         vistas.append((consulta, parametros))
         return [[_json.dumps({"choices": [{"messages": "Resumen breve."}]})]]
 
-    assert _completar(sesion, "modelo", "prompt") == "Resumen breve."
+    assert completar(sesion, "modelo", "prompt") == ("Resumen breve.", "opciones")
     consulta, parametros = vistas[0]
     assert "PARSE_JSON" in consulta
     opciones = _json.loads(parametros[2])
@@ -454,7 +478,7 @@ def test_la_redaccion_acota_la_salida_del_modelo() -> None:
 
 def test_si_la_forma_con_opciones_no_existe_se_usa_la_simple() -> None:
     """Una diferencia de versión del servicio no puede dejar sin redacción."""
-    from backend.ia.redactor import _completar
+    from backend.ia.redactor import completar
 
     intentos: list[str] = []
 
@@ -464,5 +488,5 @@ def test_si_la_forma_con_opciones_no_existe_se_usa_la_simple() -> None:
             raise RuntimeError("invalid argument types for function 'COMPLETE'")
         return [["Texto por la vía simple."]]
 
-    assert _completar(sesion, "modelo", "prompt") == "Texto por la vía simple."
+    assert completar(sesion, "modelo", "prompt") == ("Texto por la vía simple.", "simple")
     assert len(intentos) == 2

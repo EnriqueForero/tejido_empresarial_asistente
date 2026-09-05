@@ -7,6 +7,55 @@ Para un aplicativo de este tipo: **PATCH** corrige textos, estilos o errores; **
 
 ---
 
+## [3.5.0] — 2026-09-04
+
+Puesta a punto del asistente: rápido cuando puede serlo, honesto cuando no, con
+memoria, listados con el formato estándar y métricas en Snowflake.
+
+### Corregido
+- **Un fallo de la redacción costaba cuatro llamadas y dos reaperturas de sesión (88,7 s) y se mostraba como «Cifras verificadas».** Ahora un fallo de Cortex COMPLETE cuesta una llamada; sólo un error de firma de la función (inmediato) permite probar la forma simple, una vez; la sesión con Snowflake se reabre sólo ante errores de sesión o de red. La respuesta degradada llega en segundos con su causa (`meta.motivo_degradacion`) y la interfaz distingue tres estados: cifras verificadas · resumen automático por fallo de redacción · cifras sin respaldo descartadas.
+- **Inyección SQL por barra invertida** en la búsqueda por razón social y en los valores de filtro: `sql_literal` escapa `\` antes que `'`. La auditoría (`log_event`) usa parámetros enlazados.
+- La forma con opciones de COMPLETE (`max_tokens`, `temperature`) usa casts explícitos (`TO_ARRAY`, `TO_OBJECT`); el diagnóstico (`/estado`) tiene el paso «cortex_complete», que ejecuta la sentencia real y dice qué forma admite la cuenta.
+- Las descargas del asistente traen **todas** las filas obtenidas (antes, sólo las 500 que viajaban al navegador) y salen del servidor por `consulta_id`; si el resumen aún estaba en redacción, el archivo lo declara.
+- El tope de filas ya no envuelve la consulta en `SELECT * FROM (…)`: se ajusta el LIMIT de nivel superior o se añade al final, y el ORDER BY se conserva.
+- El desglose de tiempos separa la corrección de la consulta (`ms_correccion`, `intentos_sql`) del tiempo de consulta.
+- Un total o promedio correcto ya no degrada la respuesta: `verificar_cifras` acepta la suma y el promedio de cada columna cuando el resultado está completo (nunca si se recortó).
+- `IA_ANALYST_TIMEOUT` pasa de 90 a 45 s: más de 45 s casi siempre es un fallo, y esperar sólo alarga el error.
+
+### Corregido tras la revisión adversaria de esta misma versión
+- **Las guardas leen la SQL como la lee Snowflake.** El validador no conocía los comentarios `//` ni las cadenas `$$…$$`, así que una comilla dentro de ellos desplazaba los límites de los literales y escondía un `UNION` a otro esquema, o un `LIMIT` que no existía. Ahora un lector de fichas reconoce las tres formas de comentario y las dos de cadena, y **rechaza** cualquier comentario o cadena sin cerrar en vez de interpretarlo.
+- Se cierran otras cuatro vías por las que un origen de datos escapaba de los esquemas permitidos: los *stages* (`FROM @~`), los JOIN entre paréntesis (`FROM t1 JOIN (t2 JOIN t3 ON …)`), la coma después de `ON`/`USING`, y un literal con el texto «WITH X AS (» que daba de alta una tabla como si fuera una consulta común. `FETCH FIRST n ROWS ONLY` también se acota al tope de filas.
+- **Menos respuestas degradadas sin motivo.** Un rango de años («2021-2025») o una raya («—231.544 empresas—») ya no se leen como cifras negativas huérfanas; a la vez, una cifra inventada con separador de miles («1.950 empresas») deja de pasar por año.
+- La corrección de una consulta fallida se pide con la conversación completa: antes se enviaba la SQL del analista sin la pregunta que la originó, y con dos mensajes de usuario seguidos.
+- El resumen automático de respaldo ya no se vuelve a examinar: revisar sus cifras sólo podía borrar la causa real de la degradación.
+- **Un interbloqueo dejaba colgada la primera pregunta del servicio** (el candado que crea el orquestador se pedía dos veces de forma anidada). Detectado por las pruebas antes de publicar.
+- La interfaz ya no se queda con el aviso «Redactando el resumen…» para siempre cuando la petición falla o se corta después de recibir la tabla, ni al recargar la página a mitad de una redacción; si `/api/ia/estado` no responde, la página lo dice en vez de quedarse en «Preparando el asistente…».
+- Detalles: el menú de columnas de cada tabla tiene identificador propio (varias tablas en el mismo hilo se pisaban), el cronómetro no interrumpe a los lectores de pantalla, las descargas viajan en trozos de 64 KB en vez de línea por línea, un token de diagnóstico con acentos responde 403 y no un error interno, el hilo de la telemetría no puede retirarse dejando registros sin consumir, y el listado del asistente declara cuántos NIT encontró y cuántos registros trae el archivo.
+- **La batería de pruebas ya no depende del equipo donde se ejecuta.** Los dobles compartidos viven en `tests/dobles.py` (ninguna prueba importa a otra) y `pyproject.toml` declara `pythonpath`, así que `pytest` y `python -m pytest` funcionan desde cualquier directorio. Es lo que rompió la primera publicación de esta versión en Colab.
+- **Ninguna prueba puede abrir una conexión real con Snowflake.** `tests/conftest.py` anula la lectura del `.env` y vacía las variables `SF_*`: en un equipo con credenciales, la batería intentaba conectarse —y hasta llamar a Cortex— mientras que en Colab pasaba de largo.
+- **El notebook de publicación se valida con la batería.** `tests/test_notebook.py` comprueba que todo archivo que el cuaderno exige exista, que su build cubra lo mismo que la integración continua (`ruff`, `pytest`, `npm test`, `npm run build`), que nunca publique cachés y que la versión coincida en el backend, en `package.json` y en el candado de npm. La quinta publicación fallida de esta familia se detecta ahora al ejecutar `pytest`, no en Colab.
+- El cuaderno, además, alinea la versión del candado de npm, excluye `.ruff_cache` y comprueba antes de publicar que `package-lock.json` no se haya desviado de `package.json` (`npm ci` falla en seco si eso ocurre).
+- Modelo semántico: se retiran cinco sinónimos repetidos (la especificación los exige únicos), se corrige la fecha de verificación, se alinea la descripción de la cadena de segmentación con la metodología publicada y se deja de declarar el NIT como llave única, porque unas decenas de empresas tienen más de una sede.
+
+### Agregado
+- **Memoria del hilo.** El servidor reconstruye el contexto de las últimas 2 preguntas con el contenido real de Cortex Analyst (`consulta_ids`); el navegador conserva sólo el esqueleto del hilo (nunca filas). Línea de memoria, «Empezar un hilo nuevo» y consultas relacionadas.
+- **Listados con el formato estándar.** Cuando la respuesta trae NIT, se muestra con la misma tabla de la sección de consulta (orden, columnas, ficha, tarjetas en móvil) y se descarga con «Descargar listado con formato estándar»: el libro de siempre (Resumen · Vista_Principal · Datos_Completos · Diccionario) con la pregunta, la consulta y la advertencia de IA en el Resumen.
+- **Gráfica bajo pedido.** La tabla es la respuesta por defecto; la gráfica se abre sola si la pregunta la pide («gráfica», «barras», «evolución»…) o si el resultado es una sola cifra; siempre queda el botón «Ver gráfica».
+- **Métricas del asistente en Snowflake.** `SEGUIMIENTO.ASISTENTE_CONSULTAS` y `ASISTENTE_DESCARGAS` con todas las salidas (éxito, degradada, rechazada, fallo, detenida), tiempos por etapa y causa; vistas `V_ASISTENTE_DIARIO` y `V_ASISTENTE_CALIDAD`; `snowflake/03_telemetria_asistente.sql`; `docs/METRICAS.md`. Si la tabla no existe, el asistente sigue y el diagnóstico muestra los descartes.
+- Tarjeta de progreso con cronómetro y etapas, latido SSE cada 10 s y botón **«Detener»** que detiene el trabajo en el servidor.
+- NIT de ejemplo reales (890903938, 811000740, 890912462) en la consulta directa, el lote, la pregunta sugerida y el modelo semántico (`NITS_EJEMPLO`).
+- Columnas con etiqueta legible («Departamento de la empresa» en vez de `DEPARTAMENTO_EMP`); campos de contacto gobernados por `EXPORT_INCLUDE_CONTACT_FIELDS` también en el asistente.
+- Modelo semántico: 23 consultas verificadas (una por cada pregunta sugerida y una cadena de refinamiento conteo → filtro → listado), 2025 como año por defecto, `CADENA_EXPORTADA`, contrato de listados sin contacto, instrucciones de continuidad, métricas faltantes, 10 dimensiones inútiles retiradas; `tests/test_modelo_semantico.py`.
+- Arquitectura: `backend/main.py` (887 líneas) repartido en `comun.py`, `middleware.py` y `routers/{salud,empresas,asistente,recursos}.py`, con prueba de contrato de rutas; HSTS y COOP; `APP_DIAG_TOKEN` también por cabecera `X-Diag-Token`; sesión abierta al arrancar; `client_session_keep_alive` y `STATEMENT_TIMEOUT_IN_SECONDS` (300 s).
+- `snowflake/04_minimo_privilegio.sql` (retira UPDATE/DELETE sobre EVENTOS y documenta la revisión de `APPS_MANAGER`); `docs/DECISIONES.md`, `docs/BITACORA.md`, `docs/INCIDENTES.md`; CLAUDE.md con invariantes y definición de terminado; README con «Activar usuario y contraseña».
+- `ruff` (sintaxis y pyflakes) y `vitest` (tres pruebas de la interfaz) en la integración continua.
+
+### Cambiado
+- `POST /api/ia/exportar/{excel,pptx}` reciben `{consulta_id}` en vez de la tabla; nuevo `POST /api/ia/exportar/empresas`. `PreguntaIA` valida el historial estrictamente y acepta `consulta_ids` y `sesion_id`.
+- Pregunta sugerida «Principales sectores económicos por cadena…» → «Principales actividades económicas (CIIU) por cadena productiva en Antioquia» (las no exportadoras no tienen sector).
+- Documentación al dominio nuevo `tejidoempresarialasistente-production.up.railway.app`.
+- Pruebas de backend: 78 → 150 (17 fijan cada vía cerrada en la revisión adversaria y 6 validan el propio cuaderno de publicación).
+
 ## [3.4.2] — 2026-09-03
 
 ### Corregido

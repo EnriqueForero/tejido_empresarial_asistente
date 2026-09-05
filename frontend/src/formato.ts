@@ -14,6 +14,8 @@ export const esNumericaVisual = (columna: string, valor: unknown) => typeof valo
 
 export function formatearValor(valor: unknown, columna: string): string {
   if (valor === null || valor === undefined || valor === '') return '—';
+  // Una columna booleana de Snowflake se lee como el resto de las de sí/no.
+  if (typeof valor === 'boolean') return valor ? 'Sí' : 'No';
   if (typeof valor === 'number') {
     if (esIdentificador(columna)) return String(valor);
     if (columna.includes('FOB USD')) return `USD ${decimal2.format(valor)}`;
